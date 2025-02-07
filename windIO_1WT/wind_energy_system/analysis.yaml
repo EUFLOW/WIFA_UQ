@@ -19,7 +19,7 @@ wm_coupling:
 
 #pywake and foxes
 wind_deficit_model:
-  name: Bastankhah2014
+  name: Jensen
   wake_expansion_coefficient: # k = ka*ti + kb
     k_a: 0.0
     k_b: 0.04
