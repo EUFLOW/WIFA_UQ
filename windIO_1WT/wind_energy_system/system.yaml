@@ -26,5 +26,5 @@ attributes:
         xy_sampling: "grid"
         x_bounds: [-1000, 5000]
         y_bounds: [-2000, 2000]
-        dx: 50
-        dy: 50
+        dx: 10
+        dy: 10
