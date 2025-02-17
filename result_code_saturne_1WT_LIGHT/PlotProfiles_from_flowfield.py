@@ -1,11 +1,10 @@
 import netCDF4 as nc
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 # Open the NetCDF file
 file_path = 'single_time_flow_field.nc'
-
-
 dataset = nc.Dataset(file_path)
 
 # Read the variables
@@ -22,9 +21,8 @@ def create_mask(array, value, interval):
     return (array >= value - interval) & (array <= value + interval)
 
 # Define the points of interest with intervals
-interval = 30  # Interval of 15 meters
-case_number = 0 # Replace this value with the desired case number
-
+interval = 30  # Interval of 30 meters
+case_number = 0  # Replace this value with the desired case number
 
 points_of_interest = {
     'y=0': (create_mask(y, 0, interval), (x >= -1000) & (x <= 5000)),
@@ -35,19 +33,24 @@ points_of_interest = {
 
 # Plot the wind speed profiles
 for label, (mask_y, mask_x) in points_of_interest.items():
-    print(np.shape(mask_y), np.shape(mask_x))
     mask = mask_y & mask_x
-    profile = wind_speed[mask, 0, case_number] 
+    selected_x = x[mask]
+    selected_y = y[mask]
+    selected_speed = wind_speed[mask, 0, case_number]
 
-    plt.figure()  # Create a new figure for each curve
-    if 'y=0' in label:
-        plt.plot(x[mask], profile, '+', label=label)
-        plt.xlabel('x [m]')
-    elif 'x=5D' in label or 'x=10D' in label or 'x=15D' in label:
-        plt.plot(y[mask], profile, '+', label=label)
-        plt.xlabel('y [m]')
+    
+    df = pd.DataFrame({
+        'coord': selected_x if 'y=0' in label else selected_y,
+        'speed': selected_speed
+    })
+    df_mean = df.groupby('coord', as_index=False).mean()
 
+
+    plt.figure()
+    plt.plot(df_mean['coord'], df_mean['speed'], '+', label=label)
+    plt.xlabel('x [m]' if 'y=0' in label else 'y [m]')
     plt.ylabel('Wind Speed')
     plt.title(f'Wind Speed Profile for {label}')
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.show()
+
