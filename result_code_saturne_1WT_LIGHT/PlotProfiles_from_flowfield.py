@@ -4,6 +4,8 @@ import numpy as np
 
 # Open the NetCDF file
 file_path = 'single_time_flow_field.nc'
+
+
 dataset = nc.Dataset(file_path)
 
 # Read the variables
@@ -20,7 +22,7 @@ def create_mask(array, value, interval):
     return (array >= value - interval) & (array <= value + interval)
 
 # Define the points of interest with intervals
-interval = 15  # Interval of 15 meters
+interval = 30  # Interval of 15 meters
 case_number = 0 # Replace this value with the desired case number
 
 
