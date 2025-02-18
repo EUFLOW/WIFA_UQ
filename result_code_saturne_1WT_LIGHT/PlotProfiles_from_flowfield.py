@@ -43,11 +43,10 @@ for label, (mask_y, mask_x) in points_of_interest.items():
         'coord': selected_x if 'y=0' in label else selected_y,
         'speed': selected_speed
     })
-    df_mean = df.groupby('coord', as_index=False).mean()
 
 
     plt.figure()
-    plt.plot(df_mean['coord'], df_mean['speed'], '+', label=label)
+    plt.plot(df['coord'], df['speed'], '+', label=label)
     plt.xlabel('x [m]' if 'y=0' in label else 'y [m]')
     plt.ylabel('Wind Speed')
     plt.title(f'Wind Speed Profile for {label}')
