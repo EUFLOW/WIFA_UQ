@@ -52,7 +52,7 @@ interpolated_reference_data = xr.Dataset(
 )
 
 wind_diffs = []
-kk_values = np.arange(0.01, 0.3, 0.1)
+kk_values = np.arange(0.01, 0.3, 0.01)
 #kk_values = [.05, .1]
 for kk in kk_values:
     dat['attributes']['analysis']['wind_deficit_model']['wake_expansion_coefficient']['k_b'] = kk
