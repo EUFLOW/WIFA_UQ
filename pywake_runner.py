@@ -21,21 +21,39 @@ reference_flow_field = xr.load_dataset('result_code_saturne_1WT_LIGHT/single_tim
 x_grid = x_list = flow_field.x
 y_grid = y_list = flow_field.y
 x_grid, y_grid = np.meshgrid(x_list, y_list)
-speed_interp = griddata((reference_flow_field.x, reference_flow_field.y), reference_flow_field.wind_speed, (x_grid, y_grid), method='cubic')
+
+# First try reshaping the input arrays to do all time steps at once
+x_ref, y_ref = np.meshgrid(reference_flow_field.x, reference_flow_field.y)
+points = np.column_stack((x_ref.ravel(), y_ref.ravel()))
+
+# Reshape wind speed data to be (n_points, n_times)
+wind_speed_reshaped = reference_flow_field.wind_speed.values[:, 0, :, :].transpose(0, 2, 1).reshape(len(reference_flow_field.time), -1).T
+
+# Do interpolation for all time steps at once
+speed_interp = griddata(
+    points,
+    wind_speed_reshaped,
+    (x_grid, y_grid),
+    method='cubic'
+)
+
+# Reshape result back to original dimensions
+speed_interp = speed_interp.reshape(len(y_list), len(x_list), len(reference_flow_field.time))
 
 interpolated_reference_data = xr.Dataset(
-        data_vars={
-            'speed': (['y', 'x', 'time'], speed_interp[:, :, 0, :])
-        },
-        coords={
-            'x': x_list,
-            'y': y_list,
-            'time': reference_flow_field.time
-        }
-    )
+    data_vars={
+        'speed': (['y', 'x', 'time'], speed_interp)
+    },
+    coords={
+        'x': x_list,
+        'y': y_list,
+        'time': reference_flow_field.time
+    }
+)
 
 wind_diffs = []
-kk_values = [.05, .1]
+kk_values = np.arange(0.01, 0.3, 0.1)
+#kk_values = [.05, .1]
 for kk in kk_values:
     dat['attributes']['analysis']['wind_deficit_model']['wake_expansion_coefficient']['k_b'] = kk
     run_pywake(dat, output_dir='k_%.2f' % kk)
@@ -43,7 +61,7 @@ for kk in kk_values:
     flow_field = xr.load_dataset(f'k_{kk:.2f}/FarmFlow.nc')
 
     wind_diff = flow_field.effective_wind_speed - interpolated_reference_data.speed
-    wind_diffs.append(wind_diff)
+    wind_diffs.append(np.sqrt(((wind_diff ** 2).sum(['x', 'y']).isel(z=0))))
 
 final_diffs = xr.concat(wind_diffs, dim=pd.Index(kk_values, name='kk'))
 
@@ -60,3 +78,6 @@ for var in variables_to_add:
 
 # If you want to replace the integer time coordinates with float coordinates:
 final_diffs = final_diffs.assign_coords(time=refdat.time)
+best_ks = kk_values[final_diffs.argmin('kk').values]
+
+finaldat = refdat.assign_coords({'optimal_k': ('time', best_ks)})
