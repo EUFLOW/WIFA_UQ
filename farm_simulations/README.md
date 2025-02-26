@@ -23,6 +23,9 @@ There are two NetCDF files for each layout in `Result_code_saturne_Farm_calibrat
 - `flow_field.nc`:  Interpolated flow field at hub height 
 - `turbine_data.nc`: This NetCDF file contains the disk-averaged velocity, wind direction at the turbine position, and power for all the cases.
 
+Only a subset of the data has been uploaded to GitLab to avoid large files in the repository. The full dataset can be found here: 
+https://dtudk.sharepoint.com/:f:/r/sites/CL5-2021-D3-02-04-Physicsandaerodynamicsofatmosphericflowofw/Delte%20dokumenter/General/WP4/T4.3/farm_simulations?csf=1&web=1&e=6v28ur
+
 ## MeteoFiles
 
 This directory contains the vertical profiles of velocity, temperature, and turbulence for all cases, which are used as inlet conditions for the code_saturne simulation.
