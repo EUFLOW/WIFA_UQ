@@ -8,11 +8,11 @@ from scipy.interpolate import griddata
 
 kk = 0.04
 
-dat = load_yaml('./windIO_1WT/wind_energy_system/system.yaml')
+dat = load_yaml('./1WT_simulations/windIO_1WT/wind_energy_system/system.yaml')
 run_pywake(dat, output_dir='k_%.2f' % kk)
 flow_field = xr.load_dataset(f'k_{kk:.2f}/FarmFlow.nc')
 
-reference_flow_field = xr.load_dataset('result_code_saturne_1WT_LIGHT/single_time_flow_field.nc')
+reference_flow_field = xr.load_dataset('1WT_simulations/result_code_saturne_1WT_LIGHT/single_time_flow_field.nc')
 #reference_flow_field = reference_flow_field.where(reference_flow_field.x > 0, drop=True)
 #reference_flow_field = reference_flow_field.where(reference_flow_field.x < 5000, drop=True)
 #reference_flow_field = reference_flow_field.where(reference_flow_field.y < 500, drop=True)
@@ -65,7 +65,7 @@ for kk in kk_values:
 
 final_diffs = xr.concat(wind_diffs, dim=pd.Index(kk_values, name='kk'))
 
-refdat = xr.load_dataset('windIO_1WT/plant_energy_resource/1WT_calibration_data_IEA15MW.nc')
+refdat = xr.load_dataset('1WT_simulations/windIO_1WT/plant_energy_resource/1WT_calibration_data_IEA15MW.nc')
 
 	
 # Add all relevant variables from refdat as coordinates to final_diffs

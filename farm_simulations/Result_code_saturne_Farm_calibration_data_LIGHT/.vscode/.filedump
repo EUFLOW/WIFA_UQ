@@ -1,0 +1,6 @@
+
+		begin
+      f = addfile("/home/j02084/Simu/WP4/To_send/Simulation_Farm_WP4/Result_code_saturne_Farm_calibration_data_LIGHT/farm_result/turbine_data_staggered_DX9D_DY5D_Turbine_NumberNumber100.nc","r")
+      print(f)
+		end
+    
