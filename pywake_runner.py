@@ -3,6 +3,7 @@ import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
 from wifa.pywake_api import run_pywake
+from sklearn.linear_model import LinearRegression
 from windIO.utils.yml_utils import validate_yaml, load_yaml
 from scipy.interpolate import griddata
 
@@ -60,10 +61,12 @@ for kk in kk_values:
 
     flow_field = xr.load_dataset(f'k_{kk:.2f}/FarmFlow.nc')
 
-    wind_diff = flow_field.effective_wind_speed - interpolated_reference_data.speed
+    wind_diff = flow_field.wind_speed - interpolated_reference_data.speed
     wind_diffs.append(np.sqrt(((wind_diff ** 2).sum(['x', 'y']).isel(z=0))))
-
-final_diffs = xr.concat(wind_diffs, dim=pd.Index(kk_values, name='kk'))
+    plt.contourf(flow_field.x, flow_field.y, flow_field.isel(time=0, z=0).wind_speed, 100)
+    plt.title(kk)
+    plt.savefig('figs/k_%.2f.png' % kk)
+    plt.clf()
 
 refdat = xr.load_dataset('1WT_simulations/windIO_1WT/plant_energy_resource/1WT_calibration_data_IEA15MW.nc')
 
@@ -71,13 +74,56 @@ refdat = xr.load_dataset('1WT_simulations/windIO_1WT/plant_energy_resource/1WT_c
 # Add all relevant variables from refdat as coordinates to final_diffs
 variables_to_add = ['z0', 'ABL_height', 'wind_speed', 'wind_direction', 'LMO', 
                    'lapse_rate', 'capping_inversion_strength', 
-                   'capping_inversion_thickness', 'TI']
+                   'capping_inversion_thickness', 'turbulence_intensity']
+
+# If you want to replace the integer time coordinates with float coordinates:
+
+final_diffs = xr.concat(wind_diffs, dim=pd.Index(kk_values, name='kk'))
+best_ks = kk_values[final_diffs.argmin('kk').values]
+finaldat = refdat.assign_coords({'optimal_k': ('time', best_ks)})
+
 
 for var in variables_to_add:
     final_diffs = final_diffs.assign_coords({var: ('time', refdat[var].values)})
 
-# If you want to replace the integer time coordinates with float coordinates:
 final_diffs = final_diffs.assign_coords(time=refdat.time)
-best_ks = kk_values[final_diffs.argmin('kk').values]
 
-finaldat = refdat.assign_coords({'optimal_k': ('time', best_ks)})
+
+for tt in range(finaldat.time.size):
+
+    this_k = float(finaldat.optimal_k[tt].values)
+
+    flow_field = xr.load_dataset(f'k_{this_k:.2f}/FarmFlow.nc').isel(z=0, time=tt)
+
+    fig, ax = plt.subplots(3, figsize=(5, 10))
+    ax[0].set_title(this_k)
+    ax[0].contourf(reference_flow_field.x, reference_flow_field.y, reference_flow_field.wind_speed.isel(time=tt).values[0].T, 100)
+    ax[1].contourf(flow_field.x, flow_field.y, flow_field.wind_speed, 100)
+    ax[2].contourf(flow_field.x, flow_field.y, reference_flow_field.wind_speed.isel(time=tt).values[0].T - flow_field.wind_speed, 100)
+    plt.savefig('figs/time_%i' % tt)
+    plt.clf()
+    plt.close()
+
+
+
+
+features = ['z0', 'ABL_height', 'wind_speed', 'wind_direction', 'LMO', 
+            'lapse_rate', 'capping_inversion_strength', 
+            'capping_inversion_thickness', 'turbulence_intensity']
+
+# Convert to pandas DataFrame for easier manipulation
+df = finaldat.to_dataframe()
+
+# Separate features and target
+X = df[features]
+Y = df['optimal_k']
+
+# Create and fit the linear regression model
+model = LinearRegression()
+model.fit(X, Y)
+
+X_proj = X.dot(model.coef_)
+
+plt.scatter(X_proj, Y)
+plt.savefig('projection')
+plt.clf()
