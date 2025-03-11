@@ -64,7 +64,7 @@ for kk in kk_values:
     wind_diff = flow_field.wind_speed - interpolated_reference_data.speed
     wind_diffs.append(np.sqrt(((wind_diff ** 2).sum(['x', 'y']).isel(z=0))))
     plt.contourf(flow_field.x, flow_field.y, flow_field.isel(time=0, z=0).wind_speed, 100)
-    plt.title(kk)
+    plt.title('k=%.2f' % kk)
     plt.savefig('figs/k_%.2f.png' % kk)
     plt.clf()
 
@@ -96,7 +96,7 @@ for tt in range(finaldat.time.size):
     flow_field = xr.load_dataset(f'k_{this_k:.2f}/FarmFlow.nc').isel(z=0, time=tt)
 
     fig, ax = plt.subplots(3, figsize=(5, 10))
-    ax[0].set_title(this_k)
+    ax[0].set_title('time=%i, best k is %.2f' % (tt, this_k))
     ax[0].contourf(reference_flow_field.x, reference_flow_field.y, reference_flow_field.wind_speed.isel(time=tt).values[0].T, 100)
     ax[1].contourf(flow_field.x, flow_field.y, flow_field.wind_speed, 100)
     ax[2].contourf(flow_field.x, flow_field.y, reference_flow_field.wind_speed.isel(time=tt).values[0].T - flow_field.wind_speed, 100)
@@ -124,6 +124,15 @@ model.fit(X, Y)
 
 X_proj = X.dot(model.coef_)
 
-plt.scatter(X_proj, Y)
+fig, ax = plt.subplots(2, 1, figsize=(5, 10))
+ax[0].scatter(X_proj, Y)
+ax[0].set_xlabel('Projected Dimension')
+ax[0].set_ylabel('Optimal k')
+ax[1].bar(range(len(features)), (model.coef_))
+ax[1].set_xticks(range(len(features)))
+ax[1].axhline(0, c='k', ls='--')
+ax[1].set_xticklabels(features, rotation=45)
+ax[1].set_ylabel('Value of Projection')
+plt.tight_layout()
 plt.savefig('projection')
 plt.clf()
