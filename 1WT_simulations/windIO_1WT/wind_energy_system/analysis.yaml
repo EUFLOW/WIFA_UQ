@@ -19,7 +19,7 @@ wm_coupling:
 
 #pywake and foxes
 wind_deficit_model:
-  name: Jensen
+  name: Bastankhah2014
   wake_expansion_coefficient: # k = ka*ti + kb
     k_a: 0.0
     k_b: 0.04
@@ -35,7 +35,8 @@ superposition_model:
   ws_superposition: Linear
   ti_superposition: Squared
 blockage_model:
-  name: None
+  name: SelfSimilarityDeficit2020
+  ss_alpha: 0.08
 rotor_averaging:
   grid: grid
   n_x_grid_points: 4
