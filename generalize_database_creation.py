@@ -40,7 +40,9 @@ param_config = {
     "attributes.analysis.blockage_model.ss_alpha": (0.01, 0.3)
 }
 
-def run_parameter_sweep(dat: dict, param_config: Dict[str, Tuple[float, float]], n_samples: int = 30, seed: int = None) -> List[xr.Dataset]:
+def run_parameter_sweep(dat: dict, param_config: Dict[str, Tuple[float, float]], \
+                        reference_physical_inputs: dict, reference_flow_field: dict, \
+                        n_samples: int = 30, seed: int = None) -> List[xr.Dataset]:
     """
     Run parameter sweep across multiple parameters.
     
@@ -67,18 +69,18 @@ def run_parameter_sweep(dat: dict, param_config: Dict[str, Tuple[float, float]],
             set_nested_dict_value(dat, path, param_samples[i])
         
         # Run simulation
-        run_pywake(dat, output_dir=f'sample_{i}')
+        run_pywake(dat, output_dir=f'pywake_sampling/sample_{i}')
         
         # Process results (your existing processing code)
-        flow_field = xr.load_dataset(f'sample_{i}/FarmFlow.nc')
+        flow_field = xr.load_dataset(f'pywake_sampling/sample_{i}/FarmFlow.nc')
         wind_diff = flow_field.wind_speed - reference_flow_field.wind_speed
         wind_diffs.append(np.sqrt(((wind_diff ** 2).sum(['x', 'y']).isel(z=0))))
-        shutil.rmtree(f'sample_{i}')
+        #shutil.rmtree(f'pywake_sampling/sample_{i}')
         
         # Plotting (if desired)
         plt.contourf(flow_field.x, flow_field.y, flow_field.isel(time=0, z=0).wind_speed, 100)
         plt.title(f'Sample {i}')
-        plt.savefig(f'figs/sample_{i}.png')
+        plt.savefig(f'pywake_sampling/sample_{i}.png')
         plt.clf()
     
     # Create final dataset
@@ -98,29 +100,30 @@ def run_parameter_sweep(dat: dict, param_config: Dict[str, Tuple[float, float]],
     )
     
     # Add reference data
-    refdat = xr.load_dataset('1WT_simulations/windIO_1WT/plant_energy_resource/1WT_calibration_data_IEA15MW.nc')
+    refdat = reference_physical_inputs
     for var in refdat.data_vars:
         merged_data[var] = refdat[var]
     
     return merged_data
 
-# Example usage:
-param_config = {
-    "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": (0.01, 0.3),
-    "attributes.analysis.blockage_model.ss_alpha": (0.01, 0.3)
-}
+if __name__ == "__main__":
+    # Example usage:
+    param_config = {
+        "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": (0.01, 0.3),
+        "attributes.analysis.blockage_model.ss_alpha": (0.01, 0.3)
+    }
 
-dat = load_yaml('./1WT_simulations/windIO_1WT/wind_energy_system/system.yaml')
-reference_flow_field = xr.load_dataset('1WT_simulations/result_code_saturne_1WT_LIGHT/single_time_flow_field.nc')
+    dat = load_yaml('./1WT_simulations/windIO_1WT/wind_energy_system/system.yaml')
+    reference_flow_field = xr.load_dataset('1WT_simulations/result_code_saturne_1WT_LIGHT/single_time_flow_field.nc')
 
-results = run_parameter_sweep(dat, param_config, n_samples=100, seed=3)
+    results = run_parameter_sweep(dat, param_config, n_samples=100, seed=3)
 
-plt.scatter(results.ss_alpha, results.k_b, c=results.wind_diff.min('time'))
-cbar = plt.colorbar()
-plt.xlabel('ss_slpha')
-plt.ylabel('k')
-cbar.set_label('L2 Velocity Norm (m/s)')
-plt.savefig('example_database')
-plt.clf()
+    plt.scatter(results.ss_alpha, results.k_b, c=results.wind_diff.min('time'))
+    cbar = plt.colorbar()
+    plt.xlabel('ss_slpha')
+    plt.ylabel('k')
+    cbar.set_label('L2 Velocity Norm (m/s)')
+    plt.savefig('example_database')
+    plt.clf()
 
-results.to_netcdf('results.nc')
+    results.to_netcdf('results.nc')
