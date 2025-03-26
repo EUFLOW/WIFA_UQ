@@ -106,6 +106,101 @@ def run_parameter_sweep(dat: dict, param_config: Dict[str, Tuple[float, float]],
     
     return merged_data
 
+
+
+def create_error_database(
+        dat: dict, 
+        param_config: Dict[str, Tuple[float, float]], 
+        reference_physical_inputs: dict, 
+        reference_qoi: Dict[str, str], 
+        n_samples: int = 30, 
+        seed: int = None,
+        plot: bool = False
+    ) -> List[xr.Dataset]:
+    """
+    Run parameter sweep across multiple parameters.
+    
+    Args:
+        dat: Base configuration dictionary
+        param_config: Dictionary mapping parameter paths to (min, max) tuples
+        reference_physical_inputs: Dictionary ??
+        reference_qoi: Dictionary mapping quantities of interests to files containing reference data
+        n_samples: Number of samples to generate
+        seed: Random seed for reproducibility
+    
+    Returns:
+        List of output datasets
+    """
+    assert all([qoi in ['wind_speed', 'power'] for qoi in reference_qoi.keys()])
+    # Generate samples for all parameters
+    samples = create_parameter_samples(param_config, n_samples, seed)
+    
+    RSE_ws = []
+    RSE_pwr = []
+
+    if 'wind_speed' in reference_qoi.keys():
+        reference_flow_field = xr.load_dataset(reference_qoi['wind_speed'])
+    if 'power' in reference_qoi.keys():
+        reference_power_data = xr.load_dataset(reference_qoi['power'])
+
+    for i in range(n_samples):
+        # Update all parameters for this sample
+        for param_path, param_samples in samples.items():
+            # Convert string path to list of keys
+            path = param_path.split('.')
+            set_nested_dict_value(dat, path, param_samples[i])
+        
+        # Run simulation
+        run_pywake(dat, output_dir=f'pywake_sampling/sample_{i}')
+        
+        # Process results (your existing processing code)
+        if 'wind_speed' in reference_qoi.keys():
+            flow_field = xr.load_dataset(f'pywake_sampling/sample_{i}/FarmFlow.nc')
+            wind_diff = flow_field.wind_speed - reference_flow_field.wind_speed
+            RSE_ws.append(np.sqrt(((wind_diff ** 2).sum(['x', 'y']).isel(z=0)))[:,0])
+
+        if 'power' in reference_qoi.keys():
+            power_data = xr.load_dataset(f'pywake_sampling/sample_{i}/PowerTable.nc')
+            diff = power_data.power - reference_power_data.power
+            RSE_pwr.append(np.sqrt(((diff ** 2).sum(['turbine']))))
+        #shutil.rmtree(f'pywake_sampling/sample_{i}')
+        
+        # Plotting (if desired)
+        if plot and 'wind_speed' in reference_qoi.keys():
+            plt.contourf(flow_field.x, flow_field.y, flow_field.isel(time=0, z=0).wind_speed, 100)
+            plt.title(f'Sample {i}')
+            plt.savefig(f'pywake_sampling/sample_{i}.png')
+            plt.clf()
+    
+    # Create final dataset
+    data_vars = {}
+    if 'wind_speed' in reference_qoi.keys():
+        data_vars['wind_diff'] = xr.concat(RSE_ws, dim='sample')
+    if 'power' in reference_qoi.keys():
+        data_vars['power_diff'] = xr.concat(RSE_pwr, dim='sample')
+
+
+    # Add parameter values to dataset
+    merged_data = xr.Dataset(
+        data_vars=data_vars,
+        coords={
+            param_path.split('.')[-1]: xr.DataArray(
+                param_samples,
+                dims=['sample'],
+                coords={'sample': np.arange(len(param_samples))}
+            )
+            for param_path, param_samples in samples.items()
+        }
+    )
+    
+    # Add reference data
+    refdat = reference_physical_inputs
+    for var in refdat.data_vars:
+        merged_data[var] = refdat[var]
+    
+    return merged_data
+
+
 if __name__ == "__main__":
     # Example usage:
     param_config = {
