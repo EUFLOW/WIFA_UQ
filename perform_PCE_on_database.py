@@ -133,7 +133,10 @@ def build_PCE_for_given_time(UQ_mapping_results, model_param_varnames, output_va
         input_variable_array[:,v] = UQ_mapping_results.isel().get(model_param_varnames[v])
         #
         output_variable_array = np.zeros((sample_size))
-        output_variable_array[:] = UQ_mapping_results.isel(time=it).get(output_variable_name)[:,0]
+        if(output_variable_name.startswith('power')):
+           output_variable_array[:] = UQ_mapping_results.isel(time=it).get(output_variable_name)[:]
+        elif(output_variable_name.startswith('wind')):
+           output_variable_array[:] = UQ_mapping_results.isel(time=it).get(output_variable_name)[:,0]
         
     #########Fit PCE with chosen parameters############
     polynomialChaosResult = construct_PCE_ot(input_variable_array, \
@@ -169,7 +172,11 @@ def build_POD_PCE(UQ_mapping_results, model_param_varnames, output_variable_name
                              PCE_deg, marginals, copula,target_POD_EVR=0.99):
     ##### Perform POD to get variations and eignevalues
     #########Set the data from previous###############
-    complete_output_variable_array = UQ_mapping_results.isel().get(output_variable_name)[:,:,0]    
+    
+    if(output_variable_name.startswith('power')):
+        complete_output_variable_array = UQ_mapping_results.isel().get(output_variable_name)[:,:]
+    if(output_variable_name.startswith('wind')):
+        complete_output_variable_array = UQ_mapping_results.isel().get(output_variable_name)[:,:,0]
     #######SKLEARN PCA##########
     from sklearn.decomposition import PCA
     pca = PCA(svd_solver='full')
