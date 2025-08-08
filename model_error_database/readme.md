@@ -36,6 +36,5 @@
 - combines the datasets from each case into a single dataset.
 - There are 2 datasets. One where physical inputs are interpolated to hub height and one where they are not. "results_stacked.nc" and "results_stacked_heights.nc". Heights are normalized by the hub height in the latter
 
-# Gaps:
-- physical inputs remain from the windlab, not recalculated from temperature profile (including ti)
+
 - First version.... database creation is takes quite long and is not yet parallelized or memory efficient
