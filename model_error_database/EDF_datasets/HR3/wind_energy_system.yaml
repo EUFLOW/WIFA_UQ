@@ -27,5 +27,4 @@ attributes:
     
 
 output:
-  flow_field: !include flow_field.nc
   turbine_data: !include turbine_data.nc

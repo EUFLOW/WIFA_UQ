@@ -27,5 +27,4 @@ attributes:
     
 
 output:
-  
   turbine_data: !include turbine_data.nc

@@ -1,6 +1,6 @@
 #pywake and foxes
 wind_deficit_model:
-  name: TurboPark
+  name: Bastankhah2014
   wake_expansion_coefficient: # k = ka*ti + kb
     k_a: 0.0
     k_b: 0.04

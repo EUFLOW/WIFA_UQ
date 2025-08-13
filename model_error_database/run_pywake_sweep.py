@@ -5,6 +5,7 @@ from windIO.yaml import load_yaml
 import time
 from pathlib import Path
 from wifa.pywake_api import run_pywake
+import os
 
 
 def set_nested_dict_value(d: dict, path: List[str], value: float) -> None:
@@ -68,12 +69,15 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, Tupl
             path = param_path.split('.')
             set_nested_dict_value(dat, path, param_samples[i])
         
+
+        sample_dir = f'{output_dir}/sample_{i}'
+        
+
         # Run simulation
-        run_pywake(dat, output_dir=f'{output_dir}/sample_{i}')
+        run_pywake(dat, output_dir=sample_dir)
   
         # Process results (in terms of power)
-        power_table = xr.load_dataset(f'{output_dir}/sample_{i}/PowerTable.nc')
-        pw_power = power_table.power.values
+        pw_power = xr.open_dataset("results/turbine_data.nc").power.values
 
         ref_power = reference_power.power.values  
             # workaround for some cases
@@ -142,7 +146,7 @@ if __name__ == "__main__":
     meta_file=f"EDF_datasets/{case}/meta.yaml"
     meta=load_yaml(Path(meta_file))
 
-    print(meta)
+    print(f"metadata for flow case: {meta}")
     
     dat = load_yaml(Path(f"EDF_datasets/{case}/{meta['system']}"))
     reference_physical_inputs = xr.load_dataset(f"EDF_datasets/{case}/{meta['ref_resource']}")
@@ -151,6 +155,7 @@ if __name__ == "__main__":
     output_dir=f"EDF_datasets/{case}/pywake_samples"
 
     start = time.time()
-    results = run_parameter_sweep(turb_rated_power,dat,param_config,reference_power,reference_physical_inputs, n_samples=10, seed=3,output_dir=output_dir)
+    print(f"Output directory to save results: {output_dir}")
+    results = run_parameter_sweep(turb_rated_power,dat,param_config,reference_power,reference_physical_inputs, n_samples=10, seed=3,output_dir=Path(output_dir))
     print("Time taken for parameter sweep:", time.time() - start)
     results.to_netcdf('results.nc')
