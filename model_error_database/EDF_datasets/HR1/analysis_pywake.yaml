@@ -4,6 +4,7 @@ wind_deficit_model:
   wake_expansion_coefficient: # k = ka*ti + kb
     k_a: 0.0
     k_b: 0.04
+    # A: 0.04
     free_stream_ti: false
   ceps: 0.2
   use_effective_ws: true

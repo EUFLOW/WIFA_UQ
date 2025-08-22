@@ -8,6 +8,7 @@ from run_pywake_sweep import *
 from pathlib import Path
 from scipy.interpolate import interp1d
 import time
+from utils import calc_boundary_area
 
 # Identifiers for the different wind farm simulations on windlab
 case_names=[
@@ -26,7 +27,7 @@ case_names=[
 
 # defining ranges for the parameter samples
 param_config = {
-        "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": (0.01, 0.3),
+        "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": (0.01, 0.07),
         "attributes.analysis.blockage_model.ss_alpha": (0.75, 1.25)
     }
 
@@ -44,6 +45,7 @@ for case in case_names:
     dat   = load_yaml(Path(f"EDF_datasets/{case}/{meta['system']}"))
     reference_power = xr.load_dataset(f"EDF_datasets/{case}/{meta['ref_power']}")
     turb_rated_power = meta['rated_power']
+    nt=meta['nt']
     output_dir       = f"EDF_datasets/{case}/pywake_samples"
     reference_physical_inputs = xr.load_dataset(f"EDF_datasets/{case}/updated_physical_inputs.nc") #{meta['ref_resource']}")
     
@@ -54,7 +56,7 @@ for case in case_names:
         param_config,
         reference_power,
         reference_physical_inputs,
-        n_samples=50,
+        n_samples=100,
         seed=1,
         output_dir=output_dir
     )
@@ -104,8 +106,25 @@ for case in case_names:
     result_heights["capping_inversion_strength"] = xr.DataArray(capping_inversion_strength, dims=["flow_case"])
     result_heights["capping_inversion_thickness"] = xr.DataArray(capping_inversion_thickness, dims=["flow_case"])
 
-    all_case_results_heights.append(result_heights)
+    result_heights = result_heights.expand_dims(dim={"wind_farm": [case]})
 
+    result_heights["turb_rated_power"] = xr.DataArray(
+    [turb_rated_power], 
+    dims=["wind_farm"])
+
+    result_heights["nt"] = xr.DataArray(
+    [nt], 
+    dims=["wind_farm"])
+
+    x=dat['wind_farm']['layouts'][0]['coordinates']['x']
+    y=dat['wind_farm']['layouts'][0]['coordinates']['y']
+    density=calc_boundary_area(x, y,show=False)/(nt) # wf area in m2 divided by nt
+
+    result_heights["farm_density"] = xr.DataArray(
+    [density], 
+    dims=["wind_farm"])
+
+    all_case_results_heights.append(result_heights)
 
     # store the reference physical inputs as hub height values in another dataset
     if "height" in reference_physical_inputs.dims:
@@ -135,6 +154,27 @@ for case in case_names:
     result["capping_inversion_strength"] = xr.DataArray(capping_inversion_strength, dims=["flow_case"])
     result["capping_inversion_thickness"] = xr.DataArray(capping_inversion_thickness, dims=["flow_case"])
 
+    # adding some WF specific variables
+    # these variables are a function of wind farm
+    result = result.expand_dims(dim={"wind_farm": [case]})
+
+    result["turb_rated_power"] = xr.DataArray(
+    [turb_rated_power], 
+    dims=["wind_farm"])
+
+    result["nt"] = xr.DataArray(
+    [nt], 
+    dims=["wind_farm"])
+
+    wf_dat=load_yaml(Path(f"EDF_datasets/{case}/{meta['wf_dat']}"))
+    x=wf_dat['layouts'][0]['coordinates']['x']
+    y=wf_dat['layouts'][0]['coordinates']['y']
+    density=calc_boundary_area(x, y,show=False)/(nt) # wf area in m2 divided by nt
+
+    result["farm_density"] = xr.DataArray(
+    [density], 
+    dims=["wind_farm"])
+
     all_case_results.append(result)
 
 # %%
@@ -144,13 +184,12 @@ for case in case_names:
 
 case_datasets=[]
 for case, result in zip(case_names, all_case_results):
-    result = result.expand_dims(dim={"wind_farm": [case]}) 
     case_datasets.append(result)
 combined = xr.concat(case_datasets, dim='wind_farm')
 
 # Flattenning case and index into one dimension 
 stacked = combined.stack(case_index=('wind_farm', 'flow_case'))  # shape: [sample, case_index]
-stacked = stacked.dropna(dim='case_index', subset=['power_err_norm'])
+stacked = stacked.dropna(dim='case_index', subset=['power_bias_perc'])
 stacked = stacked.reset_index('case_index')
 stacked.to_netcdf('results_stacked_hh.nc')
 # combined.to_netcdf('results_combined.nc')
@@ -158,12 +197,12 @@ stacked.to_netcdf('results_stacked_hh.nc')
 # Repeating for full vertical profile data
 case_datasets_h=[]
 for case_h, result_h in zip(case_names, all_case_results_heights):
-    result_h = result_h.expand_dims(dim={"wind_farm": [case_h]}) 
+    # result_h = result_h.expand_dims(dim={"wind_farm": [case_h]}) 
     case_datasets_h.append(result_h)
 
 combined_h = xr.concat(case_datasets_h, dim='wind_farm')
 stacked_h = combined_h.stack(case_index=('wind_farm', 'flow_case'))  # shape: [sample, case_index]
-stacked_h = stacked_h.dropna(dim='case_index', subset=['power_err_norm'])
+stacked_h = stacked_h.dropna(dim='case_index', subset=['power_bias_perc'])
 stacked_h = stacked_h.reset_index('case_index')
 
 

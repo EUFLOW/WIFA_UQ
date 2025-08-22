@@ -59,8 +59,7 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, Tupl
     samples = create_parameter_samples(param_config, n_samples, seed)
     n_flow_cases=reference_power.power.shape[1]
 
-    power_errs_norm=np.zeros((n_samples, n_flow_cases), dtype=np.float64)
-    power_biases_norm=np.zeros((n_samples, n_flow_cases), dtype=np.float64)
+    bias_perc=np.zeros((n_samples, n_flow_cases), dtype=np.float64)
 
     for i in range(n_samples):  
         # Update all parameters for this sample
@@ -69,10 +68,8 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, Tupl
             path = param_path.split('.')
             set_nested_dict_value(dat, path, param_samples[i])
         
-
         sample_dir = f'{output_dir}/sample_{i}'
         
-
         # Run simulation
         run_pywake(dat, output_dir=sample_dir)
   
@@ -88,40 +85,29 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, Tupl
         # # in case there are nan reference values (relevant for scada)
         # masked_model_err = np.ma.masked_array(model_err, mask=np.isnan(ref_power))
 
-        # getting RMSE of model errors across turbines
-        model_mse = np.mean(model_err**2, axis=0)
-        model_rmse= np.sqrt(model_mse)
-
         # calculating farm level bias
         # model_bias=np.nanmean(masked_model_err, axis=0)
         model_bias=np.nanmean(model_err, axis=0)
 
-        # Normalizing by the rated power of a given turbine for comparison across cases
-        model_rmse_norm = model_rmse / turb_rated_power
-        model_bias_norm = model_bias / turb_rated_power # this metric doesn't account for different turbines within the same farm
+        # Calculating bias as a %
+        model_bias_percent = 100 * model_bias / np.nanmean(ref_power, axis=0) # this metric doesn't account for different turbines within the same farm
 
         # Fill pre-allocated arrays for all samples
-        power_errs_norm[i, :] = model_rmse_norm
-        power_biases_norm[i, :] = model_bias_norm
+        bias_perc[i, :] = model_bias_percent
 
     # Convert to xarray.DataArray
     flow_case_coords = np.arange(n_flow_cases, dtype=np.float64)
     sample_coords = np.arange(n_samples, dtype=np.float64)
 
-    power_errs_da = xr.DataArray(
-        power_errs_norm,
-        dims=['sample', 'flow_case'],
-        coords={'sample': sample_coords, 'flow_case': flow_case_coords}
-    )
-    power_biases_da = xr.DataArray(
-        power_biases_norm,
+    bias_da = xr.DataArray(
+        bias_perc,
         dims=['sample', 'flow_case'],
         coords={'sample': sample_coords, 'flow_case': flow_case_coords}
     )
 
     # Add parameter values to dataset
     merged_data = xr.Dataset(
-        data_vars={'power_err_norm': power_errs_da, 'power_bias_norm': power_biases_da},
+        data_vars={'power_bias_perc': bias_da},
         coords={
             param_path.split('.')[-1]: xr.DataArray(
                 param_samples,
