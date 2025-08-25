@@ -9,6 +9,7 @@ from pathlib import Path
 from scipy.interpolate import interp1d
 import time
 from utils import calc_boundary_area
+from utils import blockage_metrics,farm_length_width
 
 # Identifiers for the different wind farm simulations on windlab
 case_names=[
@@ -56,7 +57,7 @@ for case in case_names:
         param_config,
         reference_power,
         reference_physical_inputs,
-        n_samples=100,
+        n_samples=1000,
         seed=1,
         output_dir=output_dir
     )
@@ -219,4 +220,60 @@ tottime=round(time.time() - starttime,3)
 print(f"Total time taken: {tottime} seconds")
 
 
+#%% Post Processing
+# Finding best sample to minimize Mean Squared Bias
+# Adding some layout specific metrics
+# Outputting a new dataset with only the best sample
+
+bias_array = stacked.power_bias_perc.values  # (nsamples, nflowcases)
+
+# Compute MSE for each sample (mean squared bias across all cases)
+mses = np.mean(bias_array**2, axis=1)
+
+# Find the sample with lowest MSE
+best_idx = np.argmin(mses)
+best_kb = stacked.k_b.values[best_idx]
+best_alpha = stacked.ss_alpha.values[best_idx]
+
+print(f"Best sample index: {best_idx}, k_b: {best_kb:.4f}, ss_alpha: {best_alpha:.4f}")
+
+stacked = xr.load_dataset('results_stacked_hh.nc')
+
+ds_best_sample=stacked.isel(sample=153)
+
+case_i=stacked.case_index.values
+
+BR_farms=[]
+BD_farms=[]
+lengths=[]
+widths=[]
+for i in case_i:
+    wind_farm=stacked.wind_farm.values[i]
+    meta_file=f"EDF_datasets/{wind_farm}/meta.yaml"
+    meta=load_yaml(Path(meta_file))
+    dat = load_yaml(Path(f"EDF_datasets/{wind_farm}/{meta['system']}"))
+ 
+    x=dat['wind_farm']['layouts'][0]['coordinates']['x']
+    y=dat['wind_farm']['layouts'][0]['coordinates']['y']
+    d=dat['wind_farm']['turbines']['rotor_diameter']
+
+    xy = np.column_stack((x, y))
+
+    wind_dir=stacked.wind_direction.values[i]
+
+    BR, BD, BR_farm, BD_farm = blockage_metrics(xy, wind_dir, d)
+    length, width=farm_length_width(x,y,wind_dir,d)
+
+    BR_farms.append(BR_farm)
+    BD_farms.append(BD_farm)
+    lengths.append(length)
+    widths.append(width)
+
+ds_best_sample["Blockage_Ratio"] = xr.DataArray(BR_farms, dims=["case_index"])
+ds_best_sample["Blocking_Distance"] = xr.DataArray(BD_farms, dims=["case_index"])
+ds_best_sample["Farm_Length"] = xr.DataArray(lengths, dims=["case_index"])
+ds_best_sample["Farm_Width"] = xr.DataArray(widths, dims=["case_index"])
+
+
+ds_best_sample.to_netcdf('results_stacked_hh_best_sample.nc')
 

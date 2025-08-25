@@ -11,6 +11,11 @@ from sklearn.metrics import make_scorer, mean_squared_error, mean_absolute_error
 from scipy.stats import uniform, randint
 import joblib
 
+if not hasattr(np, 'int'):
+    np.int = int
+
+from sliced import SlicedInverseRegression
+
 class BiasPredictor:
     def __init__(self, data:xr.Dataset):
         self.data = data # hub height data
@@ -24,20 +29,23 @@ class BiasPredictor:
         df = self.data.to_dataframe().reset_index()
         # df['log_z0'] = np.log(df['z0'].values)
 
-        X = df.drop(['sample', 'case_index', 'wind_farm', 'flow_case','power_bias_perc','wind_direction','ss_alpha'], axis=1)
+        X = df.drop(['sample', 'case_index', 'wind_farm', 'flow_case','power_bias_perc','wind_direction','ss_alpha','k_b'], axis=1)
         y = df[['power_bias_perc']]
 
         return X, y
 
-    def dim_reduction(self,X:pd.DataFrame,y:pd.Series):
-        """
-        reducing the dimensions of the data
+    # def dim_reduction(self,X:pd.DataFrame,y:pd.Series):
+    #     """
+    #     reducing the dimensions of the data
 
-        (currently passed, using manual selection in preprocessing step)
-        """
+    #     (currently passed, using manual selection in preprocessing step)
+    #     """
+    #     # fit SIR model
+    #     sir = SlicedInverseRegression().fit(X, y)
+    #     X_sir = sir.transform(X)
 
-        return X,y
-        
+    #     return X_sir, y
+
 
     def train(self,X:pd.DataFrame, y:pd.Series):
         """
@@ -61,6 +69,13 @@ class BiasPredictor:
                                        ,reg_alpha=1.0,reg_lambda=10.0,subsample=0.7))
         ])
 
+
+        pipe_linear_reduced = Pipeline([
+            ("scaler", StandardScaler()),
+            ("dim_reduction", SlicedInverseRegression()),
+            ("model", LinearRegression())
+        ])
+    
         # --- Defining distributions for random hyperparameter searches for each model ---
         # (not doing hyperparameter searches here... potentially overfitting on small dataset)
         # param_dist = [
@@ -82,6 +97,7 @@ class BiasPredictor:
         outer_cv = KFold(n_splits=10, shuffle=True, random_state=42)
         outer_metrics = []
         outer_metrics_xgb=[]
+        outer_metrics_linear_reduced = []
         outer_models = []
 
         # Generate the following metrics using the best model on the unseen data
@@ -94,6 +110,9 @@ class BiasPredictor:
         for train_idx, test_idx in outer_cv.split(X, y):
             X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
             y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+
+            y_train = y_train.values.ravel()
+            y_test = y_test.values.ravel()
 
 
             # # Inner Hyperparameter Tuning  # Not using for now
@@ -117,17 +136,22 @@ class BiasPredictor:
             y_pred_linear = pipe_linear.predict(X_test)
             pipe_xgb.fit(X_train, y_train)
             y_pred_xgb = pipe_xgb.predict(X_test)
+            pipe_linear_reduced.fit(X_train, y_train)
+            y_pred_linear_reduced = pipe_linear_reduced.predict(X_test)
 
             metrics_linear={metric: func(y_test, y_pred_linear) for metric, func in scoring_metrics.items()}
             metrics_xgb={metric: func(y_test, y_pred_xgb) for metric, func in scoring_metrics.items()}
+            metrics_linear_reduced={metric: func(y_test, y_pred_linear_reduced) for metric, func in scoring_metrics.items()}
 
             outer_metrics.append(metrics_linear)
             outer_metrics_xgb.append(metrics_xgb)
+            outer_metrics_linear_reduced.append(metrics_linear_reduced)
 
         df_metrics_linear=pd.DataFrame(outer_metrics)
         df_metrics_xgb=pd.DataFrame(outer_metrics_xgb)
+        df_metrics_linear_reduced=pd.DataFrame(outer_metrics_linear_reduced)
 
-        return df_metrics_linear, df_metrics_xgb
+        return df_metrics_linear, df_metrics_xgb, df_metrics_linear_reduced
 
 
     def run(self):
@@ -140,29 +164,28 @@ class BiasPredictor:
         X, y = self.preprocess_data()
 
         # reduce dimensions (placeholder for now)
-        print("Running dimension reduction... currently a placeholder")
-        X_red, y = self.dim_reduction(X, y)
+        # print("Running dimension reduction... currently a placeholder")
+        # X_red, y = self.dim_reduction(X, y)
         
         # train the model
         print("Nested cross validation... hyperparameter optimization and evaluation on unseen data in each fold")
-        cv_df,cv_df_xgb = self.train(X_red, y)  #cv_df,best_model =
+        cv_df,cv_df_xgb,cv_df_linear_reduced = self.train(X, y)  #cv_df,best_model =
 
         # # --- Save the best model ---
         # joblib.dump(best_model, 'best_bias_predictor.pkl')
         
         cv_df.to_csv('cv_metrics.csv', index=False)
         cv_df_xgb.to_csv('cv_metrics_xgb.csv', index=False)
+        cv_df_linear_reduced.to_csv('cv_metrics_linear_reduced.csv', index=False)
 
         print("Cross-validation metrics saved to CSV files")
 
-        return cv_df,cv_df_xgb
+        return cv_df,cv_df_xgb,cv_df_linear_reduced
 
-
-# Ideally just remove the features not being used here... 
  
 if __name__ == "__main__":
     # Just testing
-    xr_data=xr.load_dataset("results_stacked_hh.nc")
+    xr_data=xr.load_dataset("results_stacked_hh_best_sample.nc")
 
     # Creating an instance of the BiasPredictor class
     predictor = BiasPredictor(xr_data)

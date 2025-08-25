@@ -94,6 +94,7 @@ def blockage_metrics(xy, wind_dir_deg_from_north, D, grid_res=151, L_inf_factor=
     BR = np.zeros(N)
     BD = np.zeros(N)
 
+    # For all turbines
     for i in range(N):
  
         # Initialize the grid for our turbine disk
@@ -106,7 +107,7 @@ def blockage_metrics(xy, wind_dir_deg_from_north, D, grid_res=151, L_inf_factor=
         # if a turbine is not blocked
         if not np.any(upstream_mask):
             BR[i] = 0.0
-            BD[i] = L_inf
+            BD[i] = 1.0
             continue
 
         # For upstream turbines, calculate the crosswind and downwind distance between rotor centres
@@ -138,8 +139,10 @@ def blockage_metrics(xy, wind_dir_deg_from_north, D, grid_res=151, L_inf_factor=
 
         # Calculating the ratios over the disk
         BR[i] = blocked.mean()
-        BD[i] = L_point.mean()
 
+        # "blocked" is a boolean representing which grid cells are blocked and L_point represents the distance from each blocked point to the nearest blocking turbine
+        # If there is no grid cells blocked, we default to L_inf and the total metric is a weighted sum dependent on how many grid cells are blocked
+        BD[i] = (blocked * L_point + (~blocked) * L_inf).mean() / L_inf
 
     # Quantities on a farm level
     BR_farm = BR.mean()
@@ -161,9 +164,11 @@ def blockage_metrics(xy, wind_dir_deg_from_north, D, grid_res=151, L_inf_factor=
                      fc='r', ec='r', linewidth=2)
             ax.text(np.mean(xy[:,0]), np.mean(xy[:,1]) + arrow_length*0.15, 'Wind', color='r', ha='center')
 
-        # # Add labels for each turbine
-        #     for (x, y, val) in zip(xy[:,0], xy[:,1], metric):
-        #         ax.text(x, y + arrow_length*0.05, f"{val:.2f}", ha='center', va='bottom', fontsize=9)
+            pad = max(250, 0.1 * max(np.ptp(xy[:,0]), np.ptp(xy[:,1])))
+            x_min, x_max = xy[:,0].min() - pad, xy[:,0].max() + pad
+            y_min, y_max = xy[:,1].min() - pad, xy[:,1].max() + pad
+            ax.set_xlim(x_min, x_max)
+            ax.set_ylim(y_min, y_max)
 
             ax.set_xlabel('X [m]')
             ax.set_ylabel('Y [m]')
@@ -175,3 +180,52 @@ def blockage_metrics(xy, wind_dir_deg_from_north, D, grid_res=151, L_inf_factor=
         plot_metric(BD, f'Blockage Distance per Turbine [m]: Farm Average = {BD_farm:.2f}', cmap='plasma')
 
     return BR, BD, BR_farm, BD_farm
+
+def farm_length_width(x, y, wind_dir_deg_from_north, D,plot=False):
+    """
+    Compute farm length and width in wind and crosswind directions, normalized by diameter.
+
+    """
+    xy = np.column_stack((x, y))
+    N = len(xy)
+    theta = np.deg2rad(wind_dir_deg_from_north)
+    # Wind direction unit vector 
+    wind_vec = np.array([-np.sin(theta), -np.cos(theta)])
+    cross_vec = np.array([np.cos(theta), -np.sin(theta)])
+
+    # Project all points onto wind and crosswind axes
+    proj_wind = xy @ wind_vec
+    proj_cross = xy @ cross_vec
+
+    length = np.round((proj_wind.max() - proj_wind.min())/D)
+    width  = np.round((proj_cross.max() - proj_cross.min())/D)
+
+    # Optional plotting
+    if plot:
+        def plot_turbine_layout(x, y, wind_dir_deg_from_north, title="Turbine Layout"):
+            plt.figure(figsize=(6,6))
+            plt.scatter(x, y, s=100, c='b', label='Turbines')
+            plt.xlabel('x [m]')
+            plt.ylabel('y [m]')
+            plt.axis('equal')
+            plt.grid(True)
+            plt.title(title)
+            
+            # Wind direction arrow 
+            center_x = np.mean(x)
+            center_y = np.mean(y)
+            arrow_length = max(np.ptp(x), np.ptp(y)) * 0.2
+            theta = np.deg2rad(wind_dir_deg_from_north)
+            dx = -arrow_length * np.sin(theta)
+            dy = -arrow_length * np.cos(theta)
+            plt.arrow(center_x, center_y, dx, dy, 
+                    head_width=arrow_length*0.15, head_length=arrow_length*0.15, 
+                    fc='r', ec='r', linewidth=2)
+            plt.text(center_x + dx*1.1, center_y + dy*1.1, 'Wind', color='r', ha='center', va='center')
+            plt.legend()
+            plt.show()
+
+        plot_turbine_layout(x, y, wind_dir_deg_from_north=wind_dir_deg_from_north, title=f"D= {D}\n Length={length}D\nWidth={width}D")
+
+
+    return length, width

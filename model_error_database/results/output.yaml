@@ -1,0 +1,3 @@
+flow_field: !include FarmFlow.nc
+power_table: !include PowerTable.nc
+wind_energy_system: !include recorded_inputs.yaml
