@@ -59,7 +59,10 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, Tupl
     samples = create_parameter_samples(param_config, n_samples, seed)
     n_flow_cases=reference_power.power.shape[1]
 
-    bias_perc=np.zeros((n_samples, n_flow_cases), dtype=np.float64)
+    bias_cap=np.zeros((n_samples, n_flow_cases), dtype=np.float64)
+    pw=np.zeros((n_samples, n_flow_cases), dtype=np.float64)
+    ref=np.zeros((n_samples, n_flow_cases), dtype=np.float64)
+
 
     for i in range(n_samples):  
         # Update all parameters for this sample
@@ -85,29 +88,48 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, Tupl
         # # in case there are nan reference values (relevant for scada)
         # masked_model_err = np.ma.masked_array(model_err, mask=np.isnan(ref_power))
 
-        # calculating farm level bias
-        # model_bias=np.nanmean(masked_model_err, axis=0)
-        model_bias=np.nanmean(model_err, axis=0)
+        """.
+        In the context of bias-correction, dividing by the model value makes more sense
+        If bias = 10%, model overpredicts by 10% (of the model value)
+        Therefore, a multiplication by 0.9 would correct the bias.
 
-        # Calculating bias as a %
-        model_bias_percent = 100 * model_bias / np.nanmean(ref_power, axis=0) # this metric doesn't account for different turbines within the same farm
+        In the context of forecasting accuracy... it seems more intuitive to divide by the reference value?
+        If bias = 10%, model output is 10% higher than the actual value
+        """
+
+        # calculating farm level bias
+        model_bias_cap=np.nanmean(model_err, axis=0)/turb_rated_power
 
         # Fill pre-allocated arrays for all samples
-        bias_perc[i, :] = model_bias_percent
+        bias_cap[i, :] = model_bias_cap
+        # pywake power (farm average)
+        pw[i, :] = np.nanmean(pw_power, axis=0)/turb_rated_power
+        # reference power (farm average)
+        ref[i, :] = np.nanmean(ref_power, axis=0)/turb_rated_power
 
     # Convert to xarray.DataArray
     flow_case_coords = np.arange(n_flow_cases, dtype=np.float64)
     sample_coords = np.arange(n_samples, dtype=np.float64)
 
-    bias_da = xr.DataArray(
-        bias_perc,
+    bias_cap = xr.DataArray(
+        bias_cap,
+        dims=['sample', 'flow_case'],
+        coords={'sample': sample_coords, 'flow_case': flow_case_coords}
+    )
+    pw = xr.DataArray(
+        pw,
+        dims=['sample', 'flow_case'],
+        coords={'sample': sample_coords, 'flow_case': flow_case_coords}
+    )
+    ref = xr.DataArray(
+        ref,
         dims=['sample', 'flow_case'],
         coords={'sample': sample_coords, 'flow_case': flow_case_coords}
     )
 
     # Add parameter values to dataset
     merged_data = xr.Dataset(
-        data_vars={'power_bias_perc': bias_da},
+        data_vars={'model_bias_cap': bias_cap, 'pw_power_cap': pw, 'ref_power_cap': ref},
         coords={
             param_path.split('.')[-1]: xr.DataArray(
                 param_samples,

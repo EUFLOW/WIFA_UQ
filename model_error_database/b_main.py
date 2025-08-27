@@ -28,8 +28,8 @@ case_names=[
 
 # defining ranges for the parameter samples
 param_config = {
-        "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": (0.01, 0.07),
-        "attributes.analysis.blockage_model.ss_alpha": (0.75, 1.25)
+        "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": (0.04, 0.04),
+        "attributes.analysis.blockage_model.ss_alpha": (0.875, 0.875)
     }
 
 all_case_results = []
@@ -57,7 +57,7 @@ for case in case_names:
         param_config,
         reference_power,
         reference_physical_inputs,
-        n_samples=1000,
+        n_samples=1,
         seed=1,
         output_dir=output_dir
     )
@@ -91,16 +91,18 @@ for case in case_names:
     wd=reference_physical_inputs.wind_direction.values
     ti=reference_physical_inputs.turbulence_intensity.values
     theta=reference_physical_inputs.potential_temperature.values
-    # epsilon=reference_physical_inputs.epsilon.values
-    # k=reference_physical_inputs.k.values
+    epsilon=reference_physical_inputs.epsilon.values
+    k=reference_physical_inputs.k.values
+    lapse_rate=reference_physical_inputs.lapse_rate.values
 
     # storing full input profile into one dataset
     result_heights["wind_speed"] = xr.DataArray(ws, dims=["flow_case","height"])
     result_heights["wind_direction"] = xr.DataArray(wd, dims=["flow_case","height"])
     result_heights["turbulence_intensity"] = xr.DataArray(ti, dims=["flow_case","height"])
     result_heights["potential_temperature"] = xr.DataArray(theta, dims=["flow_case","height"])
-    # result_heights["epsilon"] = xr.DataArray(epsilon, dims=["flow_case"])
-    # result_heights["k"] = xr.DataArray(k, dims=["flow_case"])
+    result_heights["epsilon"] = xr.DataArray(epsilon, dims=["flow_case","height"])
+    result_heights["k"] = xr.DataArray(k, dims=["flow_case","height"])
+    result_heights["lapse_rate"] = xr.DataArray(lapse_rate, dims=["flow_case"])
     result_heights["z0"] = xr.DataArray(z0, dims=["flow_case"])
     result_heights["LMO"] = xr.DataArray(LMO, dims=["flow_case"])
     result_heights["ABL_height"] = xr.DataArray(ABL_height, dims=["flow_case"])
@@ -135,8 +137,8 @@ for case in case_names:
         wd = interp1d(heights, wd, axis=1, fill_value="extrapolate")(hh)
         ti = np.maximum(interp1d(heights, ti, axis=1, fill_value="extrapolate")(hh),2e-2,)
         theta=interp1d(heights, theta, axis=1, fill_value="extrapolate")(hh)
-        # epsilon=interp1d(heights, epsilon, axis=1, fill_value="extrapolate")(hh)
-        # k=interp1d(heights, k, axis=1, fill_value="extrapolate")(hh)
+        epsilon=interp1d(heights, epsilon, axis=1, fill_value="extrapolate")(hh)
+        k=interp1d(heights, k, axis=1, fill_value="extrapolate")(hh)
         print('data interpolated')
 
     else:
@@ -147,8 +149,9 @@ for case in case_names:
     result["wind_direction"] = xr.DataArray(wd, dims=["flow_case"])
     result["turbulence_intensity"] = xr.DataArray(ti, dims=["flow_case"])
     result["potential_temperature"] = xr.DataArray(theta, dims=["flow_case"])
-    # result["epsilon"] = xr.DataArray(epsilon, dims=["flow_case"])
-    # result["k"] = xr.DataArray(k, dims=["flow_case"])
+    result["epsilon"] = xr.DataArray(epsilon, dims=["flow_case"])
+    result["k"] = xr.DataArray(k, dims=["flow_case"])
+    result["lapse_rate"] = xr.DataArray(lapse_rate, dims=["flow_case"])
     result["z0"] = xr.DataArray(z0, dims=["flow_case"])
     result["LMO"] = xr.DataArray(LMO, dims=["flow_case"])
     result["ABL_height"] = xr.DataArray(ABL_height, dims=["flow_case"])
@@ -190,9 +193,9 @@ combined = xr.concat(case_datasets, dim='wind_farm')
 
 # Flattenning case and index into one dimension 
 stacked = combined.stack(case_index=('wind_farm', 'flow_case'))  # shape: [sample, case_index]
-stacked = stacked.dropna(dim='case_index', subset=['power_bias_perc'])
+stacked = stacked.dropna(dim='case_index', subset=['model_bias_cap'])
 stacked = stacked.reset_index('case_index')
-stacked.to_netcdf('results_stacked_hh.nc')
+# stacked.to_netcdf('results_stacked_hh.nc')
 # combined.to_netcdf('results_combined.nc')
 
 # Repeating for full vertical profile data
@@ -203,7 +206,7 @@ for case_h, result_h in zip(case_names, all_case_results_heights):
 
 combined_h = xr.concat(case_datasets_h, dim='wind_farm')
 stacked_h = combined_h.stack(case_index=('wind_farm', 'flow_case'))  # shape: [sample, case_index]
-stacked_h = stacked_h.dropna(dim='case_index', subset=['power_bias_perc'])
+stacked_h = stacked_h.dropna(dim='case_index', subset=['model_bias_cap'])
 stacked_h = stacked_h.reset_index('case_index')
 
 
@@ -225,7 +228,8 @@ print(f"Total time taken: {tottime} seconds")
 # Adding some layout specific metrics
 # Outputting a new dataset with only the best sample
 
-bias_array = stacked.power_bias_perc.values  # (nsamples, nflowcases)
+# stacked = xr.load_dataset('results_stacked_hh.nc')
+bias_array = stacked.model_bias_cap.values  # (nsamples, nflowcases)
 
 # Compute MSE for each sample (mean squared bias across all cases)
 mses = np.mean(bias_array**2, axis=1)
@@ -237,9 +241,7 @@ best_alpha = stacked.ss_alpha.values[best_idx]
 
 print(f"Best sample index: {best_idx}, k_b: {best_kb:.4f}, ss_alpha: {best_alpha:.4f}")
 
-stacked = xr.load_dataset('results_stacked_hh.nc')
-
-ds_best_sample=stacked.isel(sample=153)
+ds_best_sample=stacked.isel(sample=best_idx)
 
 case_i=stacked.case_index.values
 
@@ -274,6 +276,5 @@ ds_best_sample["Blocking_Distance"] = xr.DataArray(BD_farms, dims=["case_index"]
 ds_best_sample["Farm_Length"] = xr.DataArray(lengths, dims=["case_index"])
 ds_best_sample["Farm_Width"] = xr.DataArray(widths, dims=["case_index"])
 
-
-ds_best_sample.to_netcdf('results_stacked_hh_best_sample.nc')
+ds_best_sample.to_netcdf('results_stacked_hh_default_sample.nc')
 

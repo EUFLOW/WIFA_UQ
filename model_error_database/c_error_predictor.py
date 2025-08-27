@@ -29,28 +29,16 @@ class BiasPredictor:
         df = self.data.to_dataframe().reset_index()
         # df['log_z0'] = np.log(df['z0'].values)
 
-        X = df.drop(['sample', 'case_index', 'wind_farm', 'flow_case','power_bias_perc','wind_direction','ss_alpha','k_b'], axis=1)
-        y = df[['power_bias_perc']]
+        X = df.drop(['sample', 'case_index', 'wind_farm', 'flow_case','model_bias_cap',
+                     'wind_direction','ss_alpha','k_b', 'pw_power_cap', 'ref_power_cap'], axis=1)#,'nt','turb_rated_power'
+        y = df[['model_bias_cap']]
+        validation_data=df[['turb_rated_power', 'pw_power_cap', 'ref_power_cap']]
 
-        return X, y
+        return X, y, validation_data
 
-    # def dim_reduction(self,X:pd.DataFrame,y:pd.Series):
-    #     """
-    #     reducing the dimensions of the data
-
-    #     (currently passed, using manual selection in preprocessing step)
-    #     """
-    #     # fit SIR model
-    #     sir = SlicedInverseRegression().fit(X, y)
-    #     X_sir = sir.transform(X)
-
-    #     return X_sir, y
-
-
-    def train(self,X:pd.DataFrame, y:pd.Series):
+    def train(self,X:pd.DataFrame, y:pd.Series, validation_data:pd.DataFrame):
         """
         training the model
-
         """
 
         # --- Initializing the pipeline ---
@@ -65,15 +53,19 @@ class BiasPredictor:
         # changing regularization or other parameters has limited effect
         pipe_xgb = Pipeline([
             ("scaler", StandardScaler()),  
-            ("model", xgb.XGBRegressor(max_depth=3, n_estimators=50, learning_rate=0.05, random_state=2
-                                       ,reg_alpha=1.0,reg_lambda=10.0,subsample=0.7))
+            ("model", xgb.XGBRegressor(max_depth=3, n_estimators=500))
         ])
-
 
         pipe_linear_reduced = Pipeline([
             ("scaler", StandardScaler()),
             ("dim_reduction", SlicedInverseRegression()),
             ("model", LinearRegression())
+        ])
+
+        pipe_xgb_reduced = Pipeline([
+            ("scaler", StandardScaler()),
+            ("dim_reduction", SlicedInverseRegression()),
+            ("model", xgb.XGBRegressor(max_depth=3, n_estimators=500))
         ])
     
         # --- Defining distributions for random hyperparameter searches for each model ---
@@ -94,19 +86,33 @@ class BiasPredictor:
 
         # Nested CV loop 
         # Within each loop find a best model based on RMSE by hyperparameter tuning
-        outer_cv = KFold(n_splits=10, shuffle=True, random_state=42)
+        outer_cv = KFold(n_splits=10, shuffle=True, random_state=0)
+
         outer_metrics = []
         outer_metrics_xgb=[]
         outer_metrics_linear_reduced = []
-        outer_models = []
+        outer_metrics_xgb_reduced = []
 
         # Generate the following metrics using the best model on the unseen data
-        scoring_metrics = {
+        scoring_metrics_standard = {
             'r2': r2_score,
             'mse': mean_squared_error,
             'rmse': lambda y_true, y_pred: np.sqrt(mean_squared_error(y_true, y_pred)),
             'mae': mean_absolute_error
         }
+
+        scoring_metrics_pw = {
+            'pw_bias': lambda ref, pw: np.mean(pw - ref),
+            'pw_bias_corrected': lambda ref, pw, bias: np.mean((pw - bias) - ref)
+        }
+
+        results = {
+        "linear": [],
+        "xgb": [],
+        "linear_reduced": [],
+        "xgb_reduced": []
+        }
+
         for train_idx, test_idx in outer_cv.split(X, y):
             X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
             y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
@@ -114,45 +120,38 @@ class BiasPredictor:
             y_train = y_train.values.ravel()
             y_test = y_test.values.ravel()
 
+            # Validation subset for pw/ref metrics
+            val = validation_data.iloc[test_idx]
+            pw = val['pw_power_cap'].values
+            ref = val['ref_power_cap'].values
 
-            # # Inner Hyperparameter Tuning  # Not using for now
-            # inner_cv=KFold(n_splits=5, shuffle=True, random_state=42)
+            # --- Fit models ---
+            models = {
+                "linear": pipe_linear,
+                "xgb": pipe_xgb,
+                "linear_reduced": pipe_linear_reduced,
+                "xgb_reduced": pipe_xgb_reduced
+            }
 
-            # random_search = RandomizedSearchCV(
-            #     estimator=pipe,
-            #     param_distributions=param_dist,
-            #     n_iter=1,
-            #     scoring='neg_root_mean_squared_error',  
-            #     cv=inner_cv,
-            #     refit=True,
-            #     verbose=1)  # This means, after finding the best hyperparameters, the model
-            # random_search.fit(X_train, y_train)
+            for name, model in models.items():
+                model.fit(X_train, y_train)
+                y_pred = model.predict(X_test)
 
-            # best_model = random_search.best_estimator_
-            # y_pred = best_model.predict(X_test)
+                # Standard regression metrics
+                metrics = {m: f(y_test, y_pred) for m, f in scoring_metrics_standard.items()}
 
+                # pw/ref metrics
+                for m, f in scoring_metrics_pw.items():
+                    if m == "pw_bias":
+                        metrics[m] = f(ref, pw)
+                    else:  # pw_bias_corrected (y_pred here is the predicted bias for this test dataset)
+                        metrics[m] = f(ref, pw, y_pred)
 
-            pipe_linear.fit(X_train, y_train)
-            y_pred_linear = pipe_linear.predict(X_test)
-            pipe_xgb.fit(X_train, y_train)
-            y_pred_xgb = pipe_xgb.predict(X_test)
-            pipe_linear_reduced.fit(X_train, y_train)
-            y_pred_linear_reduced = pipe_linear_reduced.predict(X_test)
+                results[name].append(metrics)
+        for name in results:
+            results[name] = pd.DataFrame(results[name])
 
-            metrics_linear={metric: func(y_test, y_pred_linear) for metric, func in scoring_metrics.items()}
-            metrics_xgb={metric: func(y_test, y_pred_xgb) for metric, func in scoring_metrics.items()}
-            metrics_linear_reduced={metric: func(y_test, y_pred_linear_reduced) for metric, func in scoring_metrics.items()}
-
-            outer_metrics.append(metrics_linear)
-            outer_metrics_xgb.append(metrics_xgb)
-            outer_metrics_linear_reduced.append(metrics_linear_reduced)
-
-        df_metrics_linear=pd.DataFrame(outer_metrics)
-        df_metrics_xgb=pd.DataFrame(outer_metrics_xgb)
-        df_metrics_linear_reduced=pd.DataFrame(outer_metrics_linear_reduced)
-
-        return df_metrics_linear, df_metrics_xgb, df_metrics_linear_reduced
-
+        return results
 
     def run(self):
         """
@@ -161,28 +160,17 @@ class BiasPredictor:
 
         # Preprocessing the data (removing unused columns, splitting into features and target)
         print("Preprocessing the data...")
-        X, y = self.preprocess_data()
+        X, y,validation_data = self.preprocess_data()
 
-        # reduce dimensions (placeholder for now)
-        # print("Running dimension reduction... currently a placeholder")
-        # X_red, y = self.dim_reduction(X, y)
-        
         # train the model
         print("Nested cross validation... hyperparameter optimization and evaluation on unseen data in each fold")
-        cv_df,cv_df_xgb,cv_df_linear_reduced = self.train(X, y)  #cv_df,best_model =
+        results = self.train(X, y,validation_data)
 
         # # --- Save the best model ---
         # joblib.dump(best_model, 'best_bias_predictor.pkl')
-        
-        cv_df.to_csv('cv_metrics.csv', index=False)
-        cv_df_xgb.to_csv('cv_metrics_xgb.csv', index=False)
-        cv_df_linear_reduced.to_csv('cv_metrics_linear_reduced.csv', index=False)
 
-        print("Cross-validation metrics saved to CSV files")
+        return results
 
-        return cv_df,cv_df_xgb,cv_df_linear_reduced
-
- 
 if __name__ == "__main__":
     # Just testing
     xr_data=xr.load_dataset("results_stacked_hh_best_sample.nc")
