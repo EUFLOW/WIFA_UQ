@@ -15,7 +15,8 @@ def set_nested_dict_value(d: dict, path: List[str], value: float) -> None:
         current = current[key]
     current[path[-1]] = value
   
-def create_parameter_samples(param_config: Dict[str, Tuple[float, float]], n_samples: int, seed: int = None) -> Dict[str, np.ndarray]:
+def create_parameter_samples(param_config: Dict[str, Tuple[float, float]], n_samples: int, 
+                             seed: int = None, manual_first_sample: Dict[str, float] = None) -> Dict[str, np.ndarray]:
     """
     Create samples for multiple parameters based on their ranges.
     
@@ -27,16 +28,24 @@ def create_parameter_samples(param_config: Dict[str, Tuple[float, float]], n_sam
     Returns:
         Dictionary mapping parameter paths to arrays of samples
     """
+
+    
     if seed is not None:
         np.random.seed(seed)
-    
-    return {
+
+    samples={
         param: np.random.uniform(min_val, max_val, n_samples)
         for param, (min_val, max_val) in param_config.items()
     }
+    if manual_first_sample:
+        # overwrite the first element with given defaults
+        for param, val in manual_first_sample.items():
+            samples[param][0] = val
+
+    return samples
 
 def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, Tuple[float, float]], reference_power: dict, 
-              reference_physical_inputs: dict,n_samples: int = 30, seed: int = None, output_dir='cases/default/pywake_sampling/') -> List[xr.Dataset]:
+              reference_physical_inputs: dict,n_samples: int = 100, seed: int = None, output_dir='cases/default/pywake_sampling/') -> List[xr.Dataset]:
     """
     run the pywake api for a range of ṕarameter samples
     compare reference power to pywake power
@@ -56,13 +65,22 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, Tupl
     """
 
     # Generate samples for all parameters
-    samples = create_parameter_samples(param_config, n_samples, seed)
+    # Specifying the first sample (for comparison to default parameters)
+    default = {
+    "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": 0.04,
+    "attributes.analysis.blockage_model.ss_alpha": 0.875
+    }
+
+    samples = create_parameter_samples(param_config, n_samples, seed, manual_first_sample=default)
     n_flow_cases=reference_power.power.shape[1]
 
     bias_cap=np.zeros((n_samples, n_flow_cases), dtype=np.float64)
     pw=np.zeros((n_samples, n_flow_cases), dtype=np.float64)
     ref=np.zeros((n_samples, n_flow_cases), dtype=np.float64)
 
+    # Run the first sample with specific (default) samples
+
+    #
 
     for i in range(n_samples):  
         # Update all parameters for this sample

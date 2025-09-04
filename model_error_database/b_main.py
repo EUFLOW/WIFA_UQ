@@ -28,8 +28,8 @@ case_names=[
 
 # defining ranges for the parameter samples
 param_config = {
-        "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": (0.04, 0.04),
-        "attributes.analysis.blockage_model.ss_alpha": (0.875, 0.875)
+        "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": (0.01, 0.07),
+        "attributes.analysis.blockage_model.ss_alpha": (0.75, 1.0)
     }
 
 all_case_results = []
@@ -57,7 +57,7 @@ for case in case_names:
         param_config,
         reference_power,
         reference_physical_inputs,
-        n_samples=1,
+        n_samples=1000,  # First sample by definition will be default, then 100 additional random samples
         seed=1,
         output_dir=output_dir
     )
@@ -224,25 +224,7 @@ print(f"Total time taken: {tottime} seconds")
 
 
 #%% Post Processing
-# Finding best sample to minimize Mean Squared Bias
-# Adding some layout specific metrics
-# Outputting a new dataset with only the best sample
-
-# stacked = xr.load_dataset('results_stacked_hh.nc')
-bias_array = stacked.model_bias_cap.values  # (nsamples, nflowcases)
-
-# Compute MSE for each sample (mean squared bias across all cases)
-mses = np.mean(bias_array**2, axis=1)
-
-# Find the sample with lowest MSE
-best_idx = np.argmin(mses)
-best_kb = stacked.k_b.values[best_idx]
-best_alpha = stacked.ss_alpha.values[best_idx]
-
-print(f"Best sample index: {best_idx}, k_b: {best_kb:.4f}, ss_alpha: {best_alpha:.4f}")
-
-ds_best_sample=stacked.isel(sample=best_idx)
-
+# Adding some layout specific features
 case_i=stacked.case_index.values
 
 BR_farms=[]
@@ -271,10 +253,10 @@ for i in case_i:
     lengths.append(length)
     widths.append(width)
 
-ds_best_sample["Blockage_Ratio"] = xr.DataArray(BR_farms, dims=["case_index"])
-ds_best_sample["Blocking_Distance"] = xr.DataArray(BD_farms, dims=["case_index"])
-ds_best_sample["Farm_Length"] = xr.DataArray(lengths, dims=["case_index"])
-ds_best_sample["Farm_Width"] = xr.DataArray(widths, dims=["case_index"])
+stacked["Blockage_Ratio"] = xr.DataArray(BR_farms, dims=["case_index"])
+stacked["Blocking_Distance"] = xr.DataArray(BD_farms, dims=["case_index"])
+stacked["Farm_Length"] = xr.DataArray(lengths, dims=["case_index"])
+stacked["Farm_Width"] = xr.DataArray(widths, dims=["case_index"])
 
-ds_best_sample.to_netcdf('results_stacked_hh_default_sample.nc')
+stacked.to_netcdf('results_stacked_hh.nc')
 
