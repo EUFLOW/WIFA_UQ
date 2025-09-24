@@ -1,10 +1,10 @@
+from wifa_uq.postprocessing.postprocesser import PostProcesser
+
 try:
     import umbra
 except:
     print('Umbra not installed.')
 
-
-from ..postprocesser import PostProcesser
 
 
 class BayesianCalibration(PostProcesser):
@@ -19,8 +19,3 @@ class BayesianCalibration(PostProcesser):
         pass
     
 
-
-
-if __name__ == "__main__":
-    bc = BayesianCalibration()
-    print(bc)
