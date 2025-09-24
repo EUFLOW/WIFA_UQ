@@ -1,0 +1,3 @@
+name: VirtWF_ABL_IEA10
+wind_resource:
+    !include "IEA10_meteo_file.nc"

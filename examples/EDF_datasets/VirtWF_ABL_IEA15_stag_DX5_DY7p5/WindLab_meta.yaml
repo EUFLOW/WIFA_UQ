@@ -1,0 +1,81 @@
+general_requ:
+  title: Virtual wind farm simulations with staggered IEA15MW and spacing DX=5D and DY=7.5D
+  notes: Virtual 10x10 wind farm for sensitivity study to boundary layer height, capping inversion thickness, wind direction, turbine type and wind farm layout using code_saturne. The farm is composed of staggered IEA15MW turbines with East/West spacing of DX=5D and North/south spacing DY=7.5D with D the rotor diameter.
+  license_name: Creative Commons Attribution 4.0 International
+  owner_org_name: Electricite De France (EDF)
+  url: null
+  version: 1.0
+  author: Thibaud Rasse, Antoine Mathieu
+  maintainer: Thibaud Rasse
+  maintainer_email: thibaud.rasse@edf.fr
+  subject:
+  - Wakes
+  conditions:
+  - Flat Terrain
+  - Offshore
+  variable:
+  - active_power
+  - wind_speed
+  - wind_direction
+  spatial: null
+
+general_opt:
+  group: FLOW
+  private: false
+  funder: HORIZON-CL5-2021-D3-03-04 UNDER GRANT AGREEMENT NO. 101084205
+  type: data - model
+  date: 18-04-2025
+  schema_compliance: windIO_2
+  model_type: RANS
+
+resources:
+- name: IEA15MW_turbine.yaml
+  description: Specifies the turbine dimensions and power curves.
+  source: IEA15MW_turbine.yaml
+  format: yaml
+  framework: null
+
+- name: FLOW_energy_site.yaml
+  description: Sets the dimensions in the x and y directions for the wind farm simulation.
+  source: FLOW_energy_site.yaml
+  format: yaml
+  framework: null
+
+- name: meteo_virtWF-IEA15.nc
+  description: Provides input data on wind resources and meteorological conditions
+    in a NetCDF file.
+  source: meteo_virtWF-IEA15.nc
+  format: netcdf
+  framework: null
+
+- name: analysis.yaml
+  description: Specifies the simulation characteristics.
+  source: analysis.yaml
+  format: yaml
+  framework: null
+
+- name: system_staggered_DX5D_DY7.5D_Turbine_Number100.yaml
+  description: Specifies the input and output of a wind farm model.
+  source: system_staggered_DX5D_DY7.5D_Turbine_Number100.yaml
+  format: yaml
+  framework: system
+
+- name: turbine_data_ST-dX5-dY7p5-IEA15.nc
+  description: Outputs power, velocity, and additional data at turbine positions in
+    a NetCDF file.
+  source: turbine_data_ST-dX5-dY7p5-IEA15.nc
+  format: netcdf
+  framework: null
+
+- name: FLOW_wind_farm_staggered_DX5D_DY7.5D_Turbine_Number100.yaml
+  description: Specifies the turbine dimensions and power curves.
+  source: FLOW_wind_farm_staggered_DX5D_DY7.5D_Turbine_Number100.yaml
+  format: yaml
+  framework: null
+
+- name: FLOW_energy_resource.yaml
+  description: Describes the wind resource available within a site. It takes a NetCDF
+    file as input to obtain this information.
+  source: FLOW_energy_resource.yaml
+  format: yaml
+  framework: null

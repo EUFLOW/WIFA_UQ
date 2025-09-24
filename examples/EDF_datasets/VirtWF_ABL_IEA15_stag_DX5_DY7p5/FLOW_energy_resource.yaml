@@ -1,0 +1,3 @@
+name: VirtWF_ABL_IEA15_stag_DX5_DY7p5
+wind_resource:
+    !include "meteo_virtWF-IEA15.nc"
