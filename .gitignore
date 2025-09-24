@@ -2,6 +2,9 @@
 *
 # Now, whitelist anything that's a directory, except cache directories
 !*/
+!src/
+!docs/
+!examples/
 __pycache__/
 # And all the file types you're interested in.
 !.toml
