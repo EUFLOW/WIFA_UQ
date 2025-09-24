@@ -1,0 +1,72 @@
+# pyproject.toml file specified at the root of the directory
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wifa_uq"
+version = "0.1"
+authors = [
+  {name = "Julian Quick"},
+  {name = "Rem-Sophia Mouradi"},
+  {name = "Jonas Schulte"},
+  {name = "Koen Devesse"},
+  {name = "Frederik Aerts"},
+  {name = "Antoine Mathieu"},
+]
+maintainers = [
+  {name = "Julian Quick"},
+  {name = "Rem-Sophia Mouradi"},
+  {name = "Jonas Schulte"},
+  {name = "Koen Devesse"},
+  {name = "Antoine Mathieu"},
+]
+description = "Uncertainty Quantification with WIFA"
+readme = "README.md"
+license = {file = "LICENSE"}
+keywords = ["Wind farm", "Wake modelling", "Uncertainty Quantification"]
+classifiers = [
+    "Topic :: Scientific/Engineering",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "py_wake>=2.6.5",
+    "foxes>=1.2.3",
+    "windIO @ git+https://github.com/EUFLOW/windIO@master",
+    "wayve @ git+https://gitlab.kuleuven.be/TFSO-software/wayve@dev_foxes",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-cov",
+    "pycodestyle",
+]
+dev = [
+    "objsize",
+    "jupyter",
+    "ncplot",
+    "nctoolkit",
+    "cartopy",
+]
+
+[project.urls]
+Homepage = "https://github.com/EUFLOW/WIFA/"
+Repository = "https://github.com/EUFLOW/WIFA.git"
+"Bug Tracker" = "https://github.com/EUFLOW/WIFA/issues"
+
+[tool.setuptools.packages.find]
+exclude = ["notebooks", "examples", "tests", "docs", "recipe", "results", "output"]
