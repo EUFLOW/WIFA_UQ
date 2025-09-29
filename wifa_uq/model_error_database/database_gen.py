@@ -4,21 +4,22 @@ import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
 from windIO.yaml import load_yaml 
-from run_pywake_sweep import *
+from wifa_uq.model_error_database.run_pywake_sweep import *
 from pathlib import Path
 from scipy.interpolate import interp1d
 import time
-from utils import calc_boundary_area
-from utils import blockage_metrics,farm_length_width
+from wifa_uq.model_error_database.utils import calc_boundary_area
+from wifa_uq.model_error_database.utils import blockage_metrics,farm_length_width
 
 
 class DatabaseGenerator:
-    def __init__(self,nsamples,param_config,base_folder,case_names,model="pywake"):
+    def __init__(self,nsamples,param_config,base_folder,case_names,model="pywake",save_to=""):
         self.nsamples=nsamples
         self.param_config=param_config
         self.model=model
         self.base_folder=base_folder
         self.case_names=case_names
+        self.save_to = save_to
 
     def generate_database(self):
         all_case_results = []
@@ -180,13 +181,16 @@ class DatabaseGenerator:
         stacked["Farm_Length"] = xr.DataArray(lengths, dims=["case_index"])
         stacked["Farm_Width"] = xr.DataArray(widths, dims=["case_index"])
 
-        stacked.to_netcdf('results_stacked_hh.nc')
-
+        if self.save_to:
+            stacked.to_netcdf(f'{self.save_to}/results_stacked_hh.nc')
+        else:
+            stacked.to_netcdf('results_stacked_hh.nc')
+        
         return stacked
 
 
 if __name__ == "__main__":
-    base_dir = Path("EDF_datasets")
+    base_dir = Path("data/EDF_datasets")
 
 
     # Identifiers for the different wind farm simulations on windlab
@@ -213,5 +217,3 @@ if __name__ == "__main__":
     nsamples=10  # First sample by definition will be default, then 100 additional random samples
     db_generator = DatabaseGenerator(nsamples, param_config, base_dir, case_names, model="pywake")
     db_generator.generate_database()
-
-
