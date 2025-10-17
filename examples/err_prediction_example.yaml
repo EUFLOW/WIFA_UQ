@@ -14,7 +14,7 @@ database_gen:
     attributes.analysis.blockage_model.ss_alpha:
     - 0.75
     - 1.0
-  n_samples: 100
+  n_samples: 250
 error_prediction:
   run: true
   features:
@@ -23,19 +23,10 @@ error_prediction:
   - HH_div_ABLh
   - Blockage_Ratio
   - turbulence_intensity
-  ML_pipeline: Default hardcoded
-  param_calibration: default
+  ML_pipeline:
+    name: xgb
+  param_calibration:
+    type: min_bias
   cross_validation:
     run: true
-    splitting_mode: kfold_shuffled
-    n_splits: 10
-    metrics:
-    - rmse
-    - r2
-    - mae
-    misc_analysis:
-      run: true
-      bias_correct: true
-      quantities:
-      - ref_bias
-      - pw_bias
+    splitting_mode: groups

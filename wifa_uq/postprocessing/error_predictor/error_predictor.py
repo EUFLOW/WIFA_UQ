@@ -1,188 +1,200 @@
-import xarray as xr
-import pandas as pd
 import numpy as np
+import pandas as pd
 
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression
-import xgboost as xgb
+
+import xgboost as xgb  
 from sklearn.model_selection import KFold, LeaveOneGroupOut
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from sklearn.feature_selection import VarianceThreshold
-from sliced import SlicedInverseRegression
 
-# Fix for numpy deprecation
-if not hasattr(np, 'int'):
-    np.int = int
 
-# -----------------------------
-# BiasCalibrator Transformer
-# -----------------------------
-from sklearn.base import BaseEstimator, TransformerMixin
+"""
+This script contains:
+- Calibrator classes (basic approaches used so far)
+- BiasPredictor class (carrying out machine learning pipeline for a given set of features and target)
+- MainPipeline class (data processing, calibration, bias prediction)
+- Cross validation routine
 
-class BiasCalibrator():
-    """
-    Transformer that selects a calibrated sample index for each fold.
-    Modes:
-        - "min_bias": chooses the sample with minimum absolute total bias across points
-        - "default": chooses sample index 0
-    """
-    def __init__(self, mode="min_bias"):
-        self.mode = mode
+The main pipeline class is intended to be flexible and accomodate different calibration
+classes which can be imported from other locations, or different bias predictor classes.
+The only requirement is that they both contain .fit and .predict methods.
 
-    def calibrate(self, train_dataset: xr.Dataset,test_dataset: xr.Dataset):
-        # Determine calibrated sample
-        if self.mode == "min_bias":
-            # sum over case_index dimension to get total bias per sample
-            abs_total_bias = np.abs(train_dataset['model_bias_cap'].sum(dim='case_index'))
-            idx_ = int(abs_total_bias.argmin().values)
-        elif self.mode == "default":
-            idx_ = 0
-        else:
-            raise ValueError(f"Unknown calibration mode {self.mode}")
-        
-        return train_dataset.sel(sample=idx_), test_dataset.sel(sample=idx_),idx_
+So far, this has only been tested with simple minimum bias calibration and XGBoost regression
+and will have to be further developed to accomodate probabilistic calibration etc.
+"""
 
-# -----------------------------
-# BiasPredictor Class
-# -----------------------------
+class MinBiasCalibrator:
+    def __init__(self, dataset_train):
+        self.dataset_train = dataset_train
+
+    def fit(self):
+        abs_total_bias = np.abs(self.dataset_train['model_bias_cap'].sum(dim='case_index'))
+        idx_ = int(abs_total_bias.argmin().values)
+        parameters=np.round(self.dataset_train.isel(sample=idx_).k_b.values,4)
+        self.best_idx_ = idx_
+        self.best_params_ = parameters
+
+        return self  # same value for all data points (this is sort of redundant)
+
+class DefaultParams:
+    def __init__(self, dataset_train):
+        self.dataset_train = dataset_train
+
+    def fit(self):
+        idx_ = 0  # default parameter is hard-coded upstream as first index
+        parameters = np.round(self.dataset_train.isel(sample=idx_).k_b.values, 4)
+        self.best_idx_ = idx_
+        self.best_params_ = parameters
+        return self
+
 class BiasPredictor:
-    def __init__(self, pipeline,data:xr.Dataset, cv_mode='default', calibration_mode='min_bias'):
-        self.data = data
-        self.cv_mode = cv_mode
-        self.calibration_mode = calibration_mode
-        self.pipeline = pipeline
+    """
+    Predict bias as a function of features and parameter samples
+    """
+    def __init__(self, regressor_pipeline):
+        self.pipeline = regressor_pipeline
 
-    # -------------------------
-    # Preprocess
-    # -------------------------
-    def preprocess_data(self):
-        validation_data = self.data[['turb_rated_power', 'pw_power_cap', 'ref_power_cap']]
-        groups = self.data['wind_farm'].values
-        return validation_data, groups
+    def fit(self, X_train, y_train):
+        # print('shape of X and Y training: ',X_train.shape, y_train.shape)
+        self.pipeline.fit(X_train, y_train)
+        return self
 
-    # -------------------------
-    # Train / CV
-    # -------------------------
-    def train(self, groups, validation_data: pd.DataFrame):
-        
-        # CV split
-        flow_cases = self.data.case_index
-        if self.cv_mode == 'logo':
-            cv = LeaveOneGroupOut()
-            splits = cv.split(flow_cases, groups=groups)
-            print(f"Using Leave-One-Group-Out CV with {len(np.unique(groups))} folds.")
-        elif self.cv_mode == 'non_shuffled_cv':
-            cv = KFold(n_splits=10, shuffle=False)
-            splits = cv.split(flow_cases)
-            print("Using K-Fold CV with 10 folds without shuffling.")
+    def predict(self, X_test):
+        y_pred = self.pipeline.predict(X_test)
+        return y_pred
+
+class MainPipeline:
+    def __init__(self, calibrator, bias_predictor):
+        self.calibrator = calibrator
+        self.bias_predictor = bias_predictor
+
+    def fit(self, dataset_train,dataset_test, drop_extra=[]):
+        # 1. Fit calibrator (posterior distribution)
+        self.calibrator.fit()
+        idxs = self.calibrator.best_idx_
+        params = self.calibrator.best_params_
+
+        # 2. Prepare training data for bias predictor (changes here for parameter pdf or other calibration approaches)
+        dataset_train_cal=dataset_train.sel(sample=idxs)
+        dataset_test_cal=dataset_test.sel(sample=idxs)
+
+        X_train_df = dataset_train_cal.to_dataframe().reset_index()
+        X_test_df = dataset_test_cal.to_dataframe().reset_index()
+
+        if isinstance(idxs,int):
+            print('Single parameter: k=', params)
+            drop_cols = ['wind_farm', 'flow_case','sample', 'case_index','model_bias_cap','data_driv_cap','nt','turb_rated_power',
+                        'veer','veer_norm','shear','shear_norm','z0','Farm_Length', 'advection', 'mixing',
+                        'capping_inversion_thickness','capping_inversion_strength','wind_direction','pw_power_cap',
+                        'ref_power_cap','k_b','ss_alpha',] + ['farm_density','turbulence_intensity','Farm_Width','wind_speed'] + drop_extra
         else:
-            cv = KFold(n_splits=10, shuffle=True, random_state=0)
-            splits = cv.split(flow_cases)
-            print("Using K-Fold CV with 10 folds and shuffling.")
+            print('Multiple parameters: k=', params)
+            drop_cols = ['wind_farm', 'flow_case','sample', 'case_index','model_bias_cap','data_driv_cap','nt','turb_rated_power',
+                        'veer','veer_norm','shear','shear_norm','z0','Farm_Length', 'advection', 'mixing',
+                        'capping_inversion_thickness','capping_inversion_strength','wind_direction','pw_power_cap',
+                        'ref_power_cap',] + ['farm_density','turbulence_intensity','Farm_Width','wind_speed'] + drop_extra
+            
 
-        # Metrics
-        scoring_standard = {
-            'r2': r2_score,
-            'mse': mean_squared_error,
-            'rmse': lambda y_true, y_pred: np.sqrt(mean_squared_error(y_true, y_pred)),
-            'mae': mean_absolute_error
+
+        X_train = X_train_df.drop(columns=drop_cols,errors='ignore')
+        X_test  = X_test_df.drop(columns=drop_cols,errors='ignore')
+
+        y_train = dataset_train_cal['model_bias_cap'].values
+        y_test  = dataset_test_cal['model_bias_cap'].values
+
+        # 3. Fit bias predictor
+        self.bias_predictor.fit(X_train, y_train)
+
+        return X_test,y_test,idxs # keeping idxs for later
+
+    def predict(self, X=None):
+        if X is None:  # use stored test data by default, but can use any datapoints ??
+            X = self.X_test_
+        return self.bias_predictor.predict(X)
+
+def compute_metrics(y_true, bias_samples,pw, ref,data_driv=None):
+    mse = ((y_true - bias_samples)**2).mean()
+    rmse = np.sqrt(mse)
+    mae = mean_absolute_error(y_true, bias_samples)
+    r2 = r2_score(y_true, bias_samples)
+
+    if pw is not None and ref is not None and data_driv is None:
+        pw_bias = np.mean(pw-ref)
+        pw_bias_corrected=np.mean((pw-bias_samples)-ref)
+    else:
+        pw_bias = None
+        pw_bias_corrected = None
+
+    if data_driv and ref:
+        data_driv_bias = np.mean(data_driv-ref)
+    else:
+        data_driv_bias = None
+    
+    return {"rmse": rmse, "mse": mse, "mae": mae, "r2": r2,
+            "pw_bias": pw_bias, "pw_bias_corrected": pw_bias_corrected,
+            "data_driv_bias": data_driv_bias}
+
+def run_cross_validation(xr_data, ML_pipeline,Calibrator_cls, BiasPredictor_cls, MainPipeline_cls):
+
+    validation_data = xr_data[['turb_rated_power', 'pw_power_cap', 'ref_power_cap']]
+    groups = xr_data['wind_farm'].values
+
+    # cross validation routine details here are hard-coded... they could and should probably be inputs
+    wf_to_group = {
+    "HR1": 0, "HR2": 0, "HR3":0,
+    "NYSTED1":1, "NYSTED2":1,
+    "VirtWF_ABL_IEA10":2, 
+    "VirtWF_ABL_IEA15_ali_DX5_DY5":3,   
+    "VirtWF_ABL_IEA15_stag_DX5_DY5":4, "VirtWF_ABL_IEA15_stag_DX5_DY7p5":4, "VirtWF_ABL_IEA15_stag_DX7p5_DY5":4,  
+    "VirtWF_ABL_IEA22":5
         }
+            
+    manual_groups = np.array([wf_to_group[w] for w in groups])
+    cv = LeaveOneGroupOut()
+    flow_cases = xr_data.case_index
+    splits = cv.split(flow_cases, groups=manual_groups)
 
-        scoring_pw = {
-            'pw_bias': lambda ref, pw: np.mean(pw - ref),
-            'pw_bias_corrected': lambda ref, pw, bias: np.mean((pw - bias) - ref)
-        }
+    stats_cv, y_preds, y_tests = [], [], []
 
-        parameters = []
-        y_preds = []
-        y_reals = []
-        results=[]
-        # -------------------------
-        # CV Loop
-        # -------------------------
-        for train_idx, test_idx in splits:
-            dataset_train = self.data.where(self.data.case_index.isin(train_idx), drop=True)
-            dataset_test = self.data.where(self.data.case_index.isin(test_idx), drop=True)
+    for train_idx, test_idx in splits:
+        dataset_train = xr_data.where(xr_data.case_index.isin(train_idx), drop=True)
+        dataset_test = xr_data.where(xr_data.case_index.isin(test_idx), drop=True)
 
-            # -------------------------
-            # Calibrate (fold-specific)
-            # -------------------------
+        calibrator=Calibrator_cls(dataset_train)
+        bias_pred=BiasPredictor_cls(ML_pipeline)
+        main_pipe=MainPipeline_cls(calibrator, bias_pred)
 
-            calibrator=BiasCalibrator(mode='min_bias')
-            data_train_cal, data_test_cal,cal_idx=calibrator.calibrate(dataset_train,dataset_test)
+        # may seem strange that this outputs the test data, but it is 
+        # following the posterior calibration step where the database is reduced to
+        # the calibrated parameter set
+        x_test,y_test,idxs=main_pipe.fit(dataset_train, dataset_test)
+        y_pred=main_pipe.predict(x_test)
 
-            # Convert to DataFrame
-            X_train_df = data_train_cal.to_dataframe().reset_index()
-            X_test_df = data_test_cal.to_dataframe().reset_index()
+        # rename these variables... not very intuitive
+        validation_fold=validation_data.isel(sample=idxs).to_dataframe().reset_index()
+        validation_fold=validation_fold.drop(columns=['case_index','sample','k_b','ss_alpha','wind_farm','flow_case'])
+        val = validation_fold.iloc[test_idx]
+        pw = val['pw_power_cap'].values
+        ref = val['ref_power_cap'].values
 
-            # storing the parameters used in this fold
-            parameters.append({
-                'ss_alpha': np.round(data_train_cal['ss_alpha'].values,4),
-                'k_b': np.round(data_train_cal['k_b'].values,4)
-            })
+        stats=compute_metrics(y_test, y_pred,pw=pw, ref=ref)
+        stats_cv.append(stats)
 
-            # -------------------------
-            # Split features/target
-            # -------------------------
-            drop_cols = ['model_bias_cap','case_index','pw_power_cap','ref_power_cap',
-                         'wind_direction','wind_farm','flow_case','sample','ss_alpha','k_b','LMO']
+        y_preds.append(y_pred)
+        y_tests.append(y_test)
 
-            X_train = X_train_df.drop(columns=drop_cols)
-            X_test  = X_test_df.drop(columns=drop_cols)
+    cv_results = pd.DataFrame(stats_cv)
+    return cv_results,y_preds,y_tests
 
-            y_train = X_train_df['model_bias_cap'].values.ravel()
-            y_test  = X_test_df['model_bias_cap'].values.ravel()
-
-            # Finding the raw engineering model and reference data subset associated with the test data points
-            validation_fold=validation_data.isel(sample=cal_idx).to_dataframe().reset_index()
-            validation_fold=validation_fold.drop(columns=['case_index','sample','k_b','ss_alpha','wind_farm','flow_case'])
-            val = validation_fold.iloc[test_idx]
-            pw = val['pw_power_cap'].values
-            ref = val['ref_power_cap'].values
-
-            # -------------------------
-            # Fit models
-            # -------------------------
-            pipeline=self.pipeline
-            pipeline.fit(X_train, y_train)
-            y_pred = pipeline.predict(X_test)
-
-
-            y_preds.append(y_pred)
-            y_reals.append(y_test)
-
-            # Standard metrics
-            metrics = {m: f(y_test, y_pred) for m, f in scoring_standard.items()}
-
-            # Bias metrics
-            for m, f in scoring_pw.items():
-                metrics[m] = f(ref, pw) if m == 'pw_bias' else f(ref, pw, y_pred)
-
-            results.append(metrics)
-
-        return results, parameters, y_reals, y_preds
-
-    # -------------------------
-    # Run
-    # -------------------------
-    def run(self):
-        print("Preprocessing the data...")
-        validation_data, groups = self.preprocess_data()
-        print("Training the model and evaluating cross-validation metrics...")
-        results, parameters, y_reals, y_preds = self.train(groups, validation_data)
-        return results, parameters, y_reals, y_preds
-
-# -----------------------------
-# Main
-# -----------------------------
+# Testing
 if __name__ == "__main__":
-    xr_data = xr.load_dataset("results_stacked_hh.nc")
+    import xarray as xr
 
+    xr_data = xr.load_dataset("results_stacked_hh.nc")
     pipe_xgb = Pipeline([
     ("scaler", StandardScaler()),
     ("model", xgb.XGBRegressor(max_depth=3, n_estimators=500))
     ])
-    
-    predictor = BiasPredictor(pipeline=pipe_xgb,data=xr_data)
-    cv_df, parameters, y_reals, y_preds = predictor.run()
+    cv_results,y_preds,y_tests=run_cross_validation(xr_data,pipe_xgb,MinBiasCalibrator, BiasPredictor, MainPipeline)

@@ -4,7 +4,7 @@ from sklearn.preprocessing import StandardScaler
 import xgboost as xgb
 from wifa_uq.model_error_database.database_gen import DatabaseGenerator
 from wifa_uq.preprocessing.preprocessing import PreprocessingInputs
-from wifa_uq.postprocessing.error_predictor.error_predictor import BiasPredictor
+from wifa_uq.postprocessing.error_predictor.error_predictor import MinBiasCalibrator,BiasPredictor,MainPipeline,run_cross_validation,compute_metrics
 from pathlib import Path
 
 def main(config_file):
@@ -43,10 +43,14 @@ def main(config_file):
         ("scaler", StandardScaler()),
         ("model", xgb.XGBRegressor(max_depth=3, n_estimators=500))
         ])
-        predictor = BiasPredictor(pipeline=pipe_xgb,data=database)
-        cv_df, parameters, y_reals, y_preds = predictor.run()
 
-        return cv_df, parameters, y_reals, y_preds
+
+        calibrator_cls = MinBiasCalibrator
+        biaspredictor_cls = BiasPredictor
+        mainpipeline_cls = MainPipeline
+        cv_df,y_preds,y_tests=run_cross_validation(database,pipe_xgb, calibrator_cls, biaspredictor_cls, mainpipeline_cls)
+
+        return cv_df, y_tests, y_preds
     
     ## future planned logic for fitting and predicting and cross val (not defined yet)
     """.
@@ -59,4 +63,4 @@ def main(config_file):
     """
 
 if __name__ == "__main__":
-    cv_df, parameters, y_reals, y_preds = main("err_prediction_example.yaml")
+    cv_df, y_tests, y_preds = main("err_prediction_example.yaml")
