@@ -1,0 +1,36 @@
+# --------------------------
+# Configuration for PCE analysis
+# --------------------------
+
+data_file: "results_stacked_hh.nc"
+
+# Physical stochastic variables to use
+stochastic_variables:
+  - z0
+  - ABL_height
+  - wind_speed
+  - turbulence_intensity
+
+# Model variables (e.g., k_b)
+model_variables:
+  - k_b
+
+# Output variable name in NetCDF
+output_variable: "model_bias_cap"
+
+# Polynomial Chaos parameters
+pce_degree: 5
+copula: "independent"          # Options: "normal" or "independent"
+marginals: "kernel"       # Options: "kernel", "uniform", "normal"
+q: 0.5                 # optional, q-quasi norm parameter, defaults to 1 if not specified
+
+
+# Sobol plotting
+save_plots: true
+
+# Training evaluation options
+evaluate_training: true    # Activate evaluation of PCE training
+plot_options:
+  scatter: true
+  distribution: true
+  metrics: ["RMSE", "R2", "Wasserstein", "KS", "KL"]  # Metrics to plot

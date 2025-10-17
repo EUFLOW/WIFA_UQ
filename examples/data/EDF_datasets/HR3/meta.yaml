@@ -1,0 +1,7 @@
+name: HR3
+nt: 80
+rated_power: 2000000.0
+ref_power: turbine_data.nc
+ref_resource: HR-R3-Neutre-ABL-350.nc
+system: wind_energy_system.yaml
+wf_dat: wind_farm.yaml

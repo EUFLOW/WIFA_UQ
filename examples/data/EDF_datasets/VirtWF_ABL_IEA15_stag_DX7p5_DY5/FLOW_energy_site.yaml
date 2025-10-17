@@ -1,0 +1,7 @@
+name: VirtWF_ABL_IEA15_stag_DX7p5_DY5
+boundaries:
+    polygons: [
+        x: [-200., 9400.,9400.,-200.],
+        y: [15500.,15500.,-6100.,-6100.]
+    ]
+energy_resource: !include FLOW_energy_resource.yaml

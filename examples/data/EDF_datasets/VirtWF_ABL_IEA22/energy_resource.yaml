@@ -1,0 +1,3 @@
+name: VirtWF_ABL_IEA22
+wind_resource:
+    !include "IEA22_meteo_file.nc"

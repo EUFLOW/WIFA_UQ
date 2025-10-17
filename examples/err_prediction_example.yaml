@@ -1,0 +1,32 @@
+description: Calibration and bias prediction workflow for Torque 2026 Abstract
+preprocessing:
+  run: true
+  base_dir: data/EDF_datasets
+  case_names: all
+database_gen:
+  run: true
+  location: data/EDF_datasets
+  flow_model: pywake
+  param_config:
+    attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b:
+    - 0.01
+    - 0.07
+    attributes.analysis.blockage_model.ss_alpha:
+    - 0.75
+    - 1.0
+  n_samples: 250
+error_prediction:
+  run: true
+  features:
+  - Blocking_Distance
+  - f_b
+  - HH_div_ABLh
+  - Blockage_Ratio
+  - turbulence_intensity
+  ML_pipeline:
+    name: xgb
+  param_calibration:
+    type: min_bias
+  cross_validation:
+    run: true
+    splitting_mode: groups

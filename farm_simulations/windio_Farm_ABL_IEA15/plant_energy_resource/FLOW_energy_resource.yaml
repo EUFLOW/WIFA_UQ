@@ -1,3 +1,0 @@
-name: FLOW UQ vnv study on toy problem, 4 WT Wind Farm
-wind_resource:
-    !include "Farm_calibration_data_IEA15MW.nc"

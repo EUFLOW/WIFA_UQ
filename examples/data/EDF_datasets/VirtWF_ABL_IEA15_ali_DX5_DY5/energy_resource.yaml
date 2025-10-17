@@ -1,0 +1,3 @@
+name: VirtWF_ABL_IEA15_ali_DX5_DY5
+wind_resource:
+    !include "IEA15_meteo_file.nc"

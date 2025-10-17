@@ -1,0 +1,87 @@
+general_requ:
+  title: Nysted wind farm simulations for sensitivity to wind speed and wind direction with code_saturne: wind speed = 8 m/s
+  notes: Simulations of the Nysted wind farm for sensitivity to wind speed and wind direction using code_saturne for 21 wind directions and wind speed = 8 m/s
+  license_name: Creative Commons Attribution 4.0 International
+  owner_org_name: Electricite De France (EDF)
+  url: null
+  version: 1.0
+  author: Thibaud Rasse, Antoine Mathieu
+  maintainer: Thibaud Rasse
+  maintainer_email: thibaud.rasse@edf.fr
+  subject:
+  - Wakes
+  conditions:
+  - Flat Terrain
+  - Offshore
+  variable:
+  - active_power
+  - wind_speed
+  - wind_direction
+  spatial: null
+
+general_opt:
+  group: FLOW
+  private: false
+  funder: HORIZON-CL5-2021-D3-03-04 UNDER GRANT AGREEMENT NO. 101084205
+  type: data - model
+  date: 18-04-2025
+  schema_compliance: windIO_2
+  model_type: RANS
+
+resources:
+- name: Bonus2p3MW_turbine.yaml
+  description: Specifies the turbine dimensions and power curves.
+  source: Bonus2p3MW_turbine.yaml
+  format: yaml
+  framework: null
+
+- name: turbine_data.nc
+  description: Outputs power, velocity, and additional data at turbine positions in
+    a NetCDF file.
+  source: turbine_data.nc
+  format: netcdf
+  framework: null
+
+- name: energy_site.yaml
+  description: Sets the dimensions in the x and y directions for the wind farm simulation.
+  source: energy_site.yaml
+  format: yaml
+  framework: null
+
+- name: Nysted-ABL-Multi-dir.nc
+  description: NetCDF file containing wind resource.
+  source: Nysted-ABL-Multi-dir.nc
+  format: netcdf
+  framework: null
+
+- name: wind_energy_system.yaml
+  description: Specifies the input and output of a wind farm model.
+  source: wind_energy_system.yaml
+  format: yaml
+  framework: system
+
+- name: analysis_code_saturne.yaml
+  description: Specifies the simulation characteristics.
+  source: analysis_code_saturne.yaml
+  format: yaml
+  framework: null
+
+- name: flow_field.nc
+  description: Outputs the flow field at hub height in a NetCDF file, available either
+    as raw data or interpolated on a grid.
+  source: flow_field.nc
+  format: netcdf
+  framework: null
+
+- name: wind_farm.yaml
+  description: Specifies the layout of the wind farm and the types of turbines.
+  source: wind_farm.yaml
+  format: yaml
+  framework: null
+
+- name: energy_resource.yaml
+  description: Describes the wind resource available within a site. It takes a NetCDF
+    file as input to obtain this information.
+  source: energy_resource.yaml
+  format: yaml
+  framework: null
