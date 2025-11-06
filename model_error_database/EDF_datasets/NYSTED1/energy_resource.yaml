@@ -1,3 +1,0 @@
-name: NYSTED1
-wind_resource:
-    !include "Nysted-ABL-neutre-Multi-10.nc"

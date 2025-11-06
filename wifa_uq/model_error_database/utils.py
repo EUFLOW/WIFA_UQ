@@ -4,7 +4,7 @@ import xarray as xr
 from wifa.wayve_api import load_yaml
 from scipy.spatial import ConvexHull
 
-def calc_boundary_area(x, y, show=True):  # 100% chatGPT
+def calc_boundary_area(x, y, show=True): 
     """
     Use convex hull to calculate area of wind farm boundary and optionally plot
     """
@@ -71,7 +71,6 @@ def blockage_metrics(xy, wind_dir_deg_from_north, D, grid_res=151, L_inf_factor=
     L_inf = L_inf_factor * D
 
     # Change direction into radians and define downwind and crosswind directions
-    # VERIFY THIS
     theta = np.deg2rad(wind_dir_deg_from_north)
     a_hat = np.array([-np.sin(theta), -np.cos(theta)]) 
     n_hat = np.array([np.cos(theta), -np.sin(theta)])
@@ -98,8 +97,8 @@ def blockage_metrics(xy, wind_dir_deg_from_north, D, grid_res=151, L_inf_factor=
     for i in range(N):
  
         # Initialize the grid for our turbine disk
-        u_i = u_pts  # (M,)
-        z_i = z_pts  # (M,)
+        u_i = u_pts 
+        z_i = z_pts
 
         # calculate the downstream distance between this turbine and all others
         delta_down = x_down[i] - x_down  # (N,)
@@ -111,8 +110,8 @@ def blockage_metrics(xy, wind_dir_deg_from_north, D, grid_res=151, L_inf_factor=
             continue
 
         # For upstream turbines, calculate the crosswind and downwind distance between rotor centres
-        cross_dist = x_cross[i] - x_cross[upstream_mask]    # (K,)
-        down_dist = delta_down[upstream_mask]             # (K,)
+        cross_dist = x_cross[i] - x_cross[upstream_mask]   
+        down_dist = delta_down[upstream_mask]          
 
 
         ### Initialize some variables:
@@ -148,7 +147,6 @@ def blockage_metrics(xy, wind_dir_deg_from_north, D, grid_res=151, L_inf_factor=
     BR_farm = BR.mean()
     BD_farm = BD.mean()
     
-    # Optional plotting
     if plot:
         def plot_metric(metric, title, cmap='viridis'):
             fig, ax = plt.subplots(figsize=(8,8))

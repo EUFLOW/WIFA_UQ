@@ -1,3 +1,0 @@
-name: HR2
-wind_resource:
-    !include "HR-R3-Neutre-ABL-RafinementDIR.nc"

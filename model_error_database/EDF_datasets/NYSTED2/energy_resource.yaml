@@ -1,3 +1,0 @@
-name: NYSTED2
-wind_resource:
-    !include "Nysted-ABL-Multi-dir.nc"

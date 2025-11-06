@@ -1,7 +1,0 @@
-name: VirtWF_ABL_IEA10
-nt: 100
-rated_power: 10000000.0
-ref_power: turbine_data.nc
-ref_resource: IEA10_meteo_file.nc
-system: wind_energy_system.yaml
-wf_dat: wind_farm.yaml

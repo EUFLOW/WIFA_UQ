@@ -1,7 +1,0 @@
-name: VirtWF_ABL_IEA15_stag_DX5_DY5
-nt: 100
-rated_power: 15000000.0
-ref_power: turbine_data_ST-dX5-dY5-IEA15.nc
-ref_resource: meteo_virtWF-IEA15.nc
-system: system_staggered_DX5D_DY5D_Turbine_Number100.yaml
-wf_dat: FLOW_wind_farm_staggered_DX5D_DY5D_Turbine_Number100.yaml

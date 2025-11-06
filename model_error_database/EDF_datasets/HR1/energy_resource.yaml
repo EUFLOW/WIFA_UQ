@@ -1,3 +1,0 @@
-name: HR1
-wind_resource:
-    !include "HR-R3-Neutre-ABL-800.nc"

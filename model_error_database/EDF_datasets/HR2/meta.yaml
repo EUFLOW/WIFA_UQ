@@ -1,7 +1,0 @@
-name: HR2
-nt: 80
-rated_power: 2000000.0
-ref_power: turbine_data.nc
-ref_resource: HR-R3-Neutre-ABL-RafinementDIR.nc
-system: wind_energy_system.yaml
-wf_dat: wind_farm.yaml

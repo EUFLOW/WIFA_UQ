@@ -10,3 +10,27 @@ This repository is created in the context of Task 4.3 of the FLOW project design
 * [WIFA's online documentation](https://eu-flow.pages.windenergy.dtu.dk/wp4/FLOW_API/)
 * [WindIO repository](https://github.com/EUFLOW/windIO)
 
+
+## Folder breakdown
+The wifa_uq folder contains the various modules which can be imported to carry out various tasks such as wifa_uq/preprocessing, (scripts related to preprocessing raw data prior to using model error database), wifa_uq/model_error_database (scripts related to generating the database of model biases), wifa_uq/postprocessing (scripts related to various applications of wifa UQ (e.g., PCE, bayesian calibration, error predictor) ).
+
+The examples folder contains implementations of bayesian calibration and model calibration & bias prediction using wifa_uq. The data used in the examples is contained here also
+
+### model_error_database
+- run_pywake_sweep.py contains a function to run the pywake api for a range of defined parameters (for a given flow case).
+
+- database_gen.py runs the pywake sweep function for all cases in a given dataset, appends other features and returns the database in netCDF form.
+
+- utils.py contains functions for calculating additional features in the model bias database (i.e., blockage metrics etc.)
+
+### preprocessing
+the preprocessing.py scripts carries out several steps such as interpolating the height dimension such that all cases are the same, and recalculating atmospheric input parameters from the vertical profile of potential temperature. These are based on the requirements of the datasets used so far. Further steps may be required for future datasets.
+
+### postprocessing 
+contains scripts related to various applications of wifa UQ (e.g., PCE, bayesian calibration, error predictor).
+
+## Implementation
+### examples/torque_workflow
+a config .yaml file is created to describe the workflow for a given case.
+
+the main.py script will interpret the config script and execute the workflow using the wifa_uq modules
