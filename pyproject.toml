@@ -46,6 +46,8 @@ dependencies = [
     "foxes>=1.2.3",
     "windIO @ git+https://github.com/EUFLOW/windIO@c119eedd7bc1ee6a929c19eef44c5eb1abb81b57",
     "wayve @ git+https://gitlab.kuleuven.be/TFSO-software/wayve@d4ccdb3e0c02114565e490d7c512b6082abc70d5",
+    "wifa @ git+https://github.com/EUFLOW/WIFA@241689074ecccea5f8199c2f6b1ce56708770737",
+    "umbra @ git+https://github.com/mworchel/umbra@073bf90b4d53dc653921ba705739a69ca54f0637",
 ]
 
 [project.optional-dependencies]
@@ -63,9 +65,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/EUFLOW/WIFA/"
-Repository = "https://github.com/EUFLOW/WIFA.git"
-"Bug Tracker" = "https://github.com/EUFLOW/WIFA/issues"
+Homepage = "https://github.com/EUFLOW/WIFA-UQ/"
+Repository = "https://github.com/EUFLOW/WIFA-UQ.git"
+"Bug Tracker" = "https://github.com/EUFLOW/WIFA-UQ/issues"
 
 [tool.setuptools.packages.find]
 exclude = ["notebooks", "examples", "tests", "docs", "recipe", "results", "output"]
@@ -75,9 +77,14 @@ channels = ["conda-forge"]
 platforms = ["osx-arm64"]
 
 [tool.pixi.dependencies]
-python = ">=3.10,<3.14"
+python = "~=3.12.0"
 hdf5 = "*"
 netcdf4 = "*"
+scikit-learn = ">=1.7.2,<2"
+xgboost = "~=2.0.3"
+shap = ">=0.48.0,<0.49"
+llvmlite = ">=0.45.1,<0.46"
+numba = ">=0.62.1,<0.63"
 
 [tool.pixi.pypi-dependencies]
 wifa_uq = { path = ".", editable = true }
