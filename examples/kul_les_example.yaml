@@ -1,0 +1,55 @@
+description: "Workflow for KUL_LES data"
+
+# --- Define all file paths explicitly ---
+# This completely replaces the need for meta.yaml
+# Paths are relative to this config file's location.
+paths:
+  system_config: data/KUL_LES/wind_energy_system/system_pywake.yaml
+  reference_power: data/KUL_LES/observed_output/observedPowerKUL.nc
+  reference_resource: data/KUL_LES/plant_energy_resource/originalData.nc
+  wind_farm_layout: data/KUL_LES/plant_wind_farm/FLOW_UQ_vnv_toy_study_wind_farm.yaml
+  
+  # --- Define output locations ---
+  output_dir: data/KUL_LES/wifa_uq_results # All results will be saved here
+  processed_resource_file: "processed_physical_inputs.nc" # Will be saved in output_dir
+  database_file: "results_stacked_hh.nc"         # Will be saved in output_dir
+
+# --- Preprocessing now operates on the files above ---
+preprocessing:
+  run: true
+  steps: [recalculate_params] 
+
+# --- DB Gen now just defines parameters ---
+database_gen:
+  run: true
+  flow_model: pywake
+  param_config:
+    attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b:
+    - 0.01
+    - 0.07
+    attributes.analysis.blockage_model.ss_alpha:
+    - 0.75  # You can use any range; [0.75, 1.0] is used in the other example
+    - 1.0
+  n_samples: 100
+
+# --- Error Prediction ---
+error_prediction:
+  run: true
+  features:
+    - ABL_height
+    - wind_veer
+    - lapse_rate
+  ml_pipeline: Default hardcoded
+  calibrator: MinBiasCalibrator
+  bias_predictor: BiasPredictor
+  cross_validation:
+    run: true
+    splitting_mode: kfold_shuffled
+    n_splits: 2
+    metrics:
+    - rmse
+    - r2
+
+sensitivity_analysis:
+  run_observation_shap: true 
+  run_bias_shap: true
