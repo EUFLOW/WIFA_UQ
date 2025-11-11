@@ -4,23 +4,88 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import shap
 
-from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.base import BaseEstimator, RegressorMixin, TransformerMixin
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures
+from sklearn.linear_model import LinearRegression
+from sklearn.exceptions import NotFittedError
 
 import xgboost as xgb
 from sklearn.model_selection import KFold, LeaveOneGroupOut
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
+try:
+    from sliced import SlicedInverseRegression
+except ImportError as e:
+    print("Error: 'sliced' package not found. SIRPolynomialRegressor will not be available.")
+    raise e
+
 
 """
 This script contains:
-- Calibrator classes (basic approaches used so far)
-- BiasPredictor class (carrying out machine learning pipeline for a given set of features and target)
-- MainPipeline class (data processing, calibration, bias prediction)
+- SIRPolynomialRegressor class (NEW)
+- Calibrator classes
+- BiasPredictor class
+- MainPipeline class
 - Cross validation routine
-- SHAP sensitivity analysis functions
+- SHAP/SIR sensitivity analysis functions
 """
+
+## ------------------------------------------------------------------ ##
+## NEW REGRESSOR CLASS
+## ------------------------------------------------------------------ ##
+class SIRPolynomialRegressor(BaseEstimator, RegressorMixin):
+    """
+    A scikit-learn compatible regressor that first applies SIR for
+    dimension reduction and then fits a polynomial regression
+    on the reduced dimension(s).
+    """
+    def __init__(self, n_directions=1, degree=2):
+        if SlicedInverseRegression is None:
+            raise ImportError("The 'sliced' package is required to use SIRPolynomialRegressor.")
+        self.n_directions = n_directions
+        self.degree = degree
+
+    def fit(self, X, y):
+        # 1. Standard Scaler
+        self.scaler_ = StandardScaler()
+        X_scaled = self.scaler_.fit_transform(X, y)
+
+        # 2. Sliced Inverse Regression
+        self.sir_ = SlicedInverseRegression(n_directions=self.n_directions)
+        # Sliced package expects y as a 1D array
+        y_ravel = np.ravel(y)
+        X_sir = self.sir_.fit_transform(X_scaled, y_ravel)
+
+        # Store the directions (feature importance)
+        # We take the absolute value for importance ranking
+        self.sir_directions_ = np.abs(self.sir_.directions_[0, :])
+
+        # 3. Polynomial Regression
+        self.poly_reg_ = Pipeline([
+            ('poly', PolynomialFeatures(degree=self.degree, include_bias=False)),
+            ('lin_reg', LinearRegression())
+        ])
+        self.poly_reg_.fit(X_sir, y)
+
+        return self
+
+    def predict(self, X):
+        if not hasattr(self, 'scaler_'):
+            raise NotFittedError("This SIRPolynomialRegressor instance is not fitted yet.")
+        
+        X_scaled = self.scaler_.transform(X)
+        X_sir = self.sir_.transform(X_scaled)
+        return self.poly_reg_.predict(X_sir)
+
+    def get_feature_importance(self, feature_names):
+        if not hasattr(self, 'sir_directions_'):
+            raise NotFittedError("This SIRPolynomialRegressor instance is not fitted yet.")
+        
+        return pd.Series(self.sir_directions_, index=feature_names)
+
+## ------------------------------------------------------------------ ##
+
 
 class MinBiasCalibrator:
     def __init__(self, dataset_train):
@@ -103,6 +168,9 @@ class MainPipeline:
         # --- FIX: Clean string-like columns before fitting ---
         for col in X_train.columns:
             if X_train[col].dtype == 'object':
+                # Check for empty dataframe, common in CV folds
+                if X_train[col].dropna().empty:
+                    continue
                 first_item = X_train[col].dropna().iloc[0]
                 if isinstance(first_item, str):
                     print(f"    Cleaning string column in FIT: {col}")
@@ -147,12 +215,12 @@ def compute_metrics(y_true, bias_samples,pw, ref,data_driv=None):
             "pw_bias": pw_bias, "pw_bias_corrected": pw_bias_corrected,
             "data_driv_bias": data_driv_bias}
 
-def run_observation_sensitivity(database, features_list, ml_pipeline, output_dir):
+def run_observation_sensitivity(database, features_list, ml_pipeline, model_type, output_dir):
     """
-    Trains a new XGBoost model to predict reference power from features
-    and saves a SHAP summary plot.
+    Trains a model to predict reference power from features
+    and saves feature importance plots (SHAP or SIR).
     """
-    print("--- Running Observation Sensitivity (SHAP on Ref Power) ---")
+    print("--- Running Observation Sensitivity ---")
     
     # Select only one sample (e.g., sample=0)
     db_slice = database.sel(sample=0).to_dataframe().reset_index()
@@ -167,47 +235,60 @@ def run_observation_sensitivity(database, features_list, ml_pipeline, output_dir
     # Train a new pipeline on all data
     model_pipeline = ml_pipeline.fit(X, y)
     
-    xgb_model = model_pipeline.named_steps['model']
-    X_scaled = model_pipeline.named_steps['scaler'].transform(X)
-    
-    # Explain the model
-    explainer = shap.TreeExplainer(xgb_model)
-    shap_values = explainer(X_scaled)
-
-    print("--- SHAP Global Feature Importance (Mean Absolute Value) ---")
-
-    # 1. Get the raw numpy array of SHAP values
-    raw_shap_array = shap_values.values
-
-    # 2. Calculate the mean of the absolute values for each feature (axis=0)
-    mean_abs_shap = np.mean(np.abs(raw_shap_array), axis=0)
-
-    # 3. Get the feature names from your original unscaled DataFrame X
-    feature_names = X.columns
-
-    # 4. Combine into a pandas Series and sort for easy reading
-    shap_scores = pd.Series(mean_abs_shap, index=feature_names)
-    shap_scores = shap_scores.sort_values(ascending=False)
-
-    fig, ax = plt.subplots(figsize=(10, 8))
-    shap_scores.plot(kind='barh', ax=ax)
-    ax.set_title('Global SHAP Feature Importance (Mean Absolute SHAP Value)')
-    ax.set_xlabel('Mean |SHAP Value| (Impact on ref_power_cap)')
-    plt.tight_layout()
-    
-    bar_plot_path = output_dir / "observation_shap_importance.png"
-    plt.savefig(bar_plot_path, dpi=150, bbox_inches='tight')
-    plt.close(fig) # Close this specific figure
-    print(f"Saved SHAP importance bar plot to: {bar_plot_path}")
+    # --- Model-Aware Sensitivity Logic ---
+    # We check the model type to decide which importance metric to use.
+    if model_type == "tree":
+        print("--- Calculating SHAP (TreeExplainer) ---")
+        xgb_model = model_pipeline.named_steps['model']
+        X_scaled = model_pipeline.named_steps['scaler'].transform(X)
         
-    # Generate and save the plot
-    shap.summary_plot(shap_values, X, show=False)
-    plot_path = output_dir / "observation_shap.png"
-    plt.savefig(plot_path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f"Saved observation SHAP plot to: {plot_path}")
+        explainer = shap.TreeExplainer(xgb_model)
+        shap_values_obj = explainer(X_scaled) # This is the Explanation object
+        shap_values = shap_values_obj.values  # This is the raw numpy array
+
+        # --- 1. BAR PLOT (from mean abs shap) ---
+        print("--- Calculating SHAP Global Feature Importance (Mean Absolute Value) ---")
+        mean_abs_shap = np.mean(np.abs(shap_values), axis=0)
+        shap_scores = pd.Series(mean_abs_shap, index=X.columns).sort_values(ascending=True)
+
+        fig, ax = plt.subplots(figsize=(10, 8))
+        shap_scores.plot(kind='barh', ax=ax)
+        ax.set_title('Global SHAP Feature Importance (Mean Absolute SHAP Value)')
+        ax.set_xlabel('Mean |SHAP Value| (Impact on ref_power_cap)')
+        plt.tight_layout()
         
-def run_cross_validation(xr_data, ML_pipeline, Calibrator_cls, BiasPredictor_cls, 
+        bar_plot_path = output_dir / "observation_shap_importance.png"
+        plt.savefig(bar_plot_path, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        print(f"Saved SHAP importance bar plot to: {bar_plot_path}")
+        
+        # --- 2. BEESWARM PLOT (from shap object) ---
+        shap.summary_plot(shap_values_obj, X, show=False)
+        plot_path = output_dir / "observation_shap.png"
+        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"Saved observation SHAP beeswarm plot to: {plot_path}")
+
+    elif model_type == "sir":
+        print("--- Calculating SIR Feature Importance (Direction Coefficients) ---")
+        # model_pipeline is the SIRPolynomialRegressor instance
+        shap_scores = model_pipeline.get_feature_importance(X.columns)
+        shap_scores = shap_scores.sort_values(ascending=True) # Sort for barh
+
+        # --- 1. BAR PLOT (from SIR directions) ---
+        fig, ax = plt.subplots(figsize=(10, 8))
+        shap_scores.plot(kind='barh', ax=ax)
+        ax.set_title('Global SIR Feature Importance (Absolute Direction Coefficient)')
+        ax.set_xlabel('Mean |SIR Direction Coefficient| (Impact on ref_power_cap)')
+        plt.tight_layout()
+        
+        bar_plot_path = output_dir / "observation_sir_importance.png"
+        plt.savefig(bar_plot_path, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        print(f"Saved SIR importance bar plot to: {bar_plot_path}")
+        print("--- NOTE: Beeswarm plot is not available for SIR model. ---")
+            
+def run_cross_validation(xr_data, ML_pipeline, model_type, Calibrator_cls, BiasPredictor_cls, 
                          MainPipeline_cls, cv_config: dict, features_list: list,
                          output_dir: Path, sa_config: dict):
     
@@ -225,8 +306,8 @@ def run_cross_validation(xr_data, ML_pipeline, Calibrator_cls, BiasPredictor_cls
             "VirtWF_ABL_IEA10":2,  
             "VirtWF_ABL_IEA15_ali_DX5_DY5":3,   
             "VirtWF_ABL_IEA15_stag_DX5_DY5":4, "VirtWF_ABL_IEA15_stag_DX5_DY7p5":4, "VirtWF_ABL_IEA15_stag_DX7p5_DY5":4,  
-            "VirtWF_ABL_IEA22":5
-            # Add other known case names here
+            "VirtWF_ABL_IEA22":5,
+            "KUL_LES": 6 # Add KUL_LES to a new group
         }
         # Map groups, assigning a default group (e.g., 99) if not found
         default_group = max(wf_to_group.values()) + 1 if wf_to_group else 0
@@ -240,7 +321,8 @@ def run_cross_validation(xr_data, ML_pipeline, Calibrator_cls, BiasPredictor_cls
         else:
             cv = LeaveOneGroupOut()
             splits = cv.split(xr_data.case_index, groups=manual_groups)
-            print(f"Using LeaveOneGroupOut with {len(np.unique(manual_groups))} groups.")
+            n_splits = cv.get_n_splits(groups=manual_groups) # Get actual number of splits
+            print(f"Using LeaveOneGroupOut with {n_splits} groups.")
     
     if splitting_mode == 'kfold_shuffled':
         n_splits = cv_config.get('n_splits', 5)
@@ -252,7 +334,7 @@ def run_cross_validation(xr_data, ML_pipeline, Calibrator_cls, BiasPredictor_cls
     
     # --- Add lists to store items for SHAP ---
     all_models = []
-    all_xtest_scaled = []
+    all_xtest_scaled = [] # Only used for tree models
     all_features_df = []
 
     for i, (train_idx_locs, test_idx_locs) in enumerate(splits):
@@ -289,9 +371,11 @@ def run_cross_validation(xr_data, ML_pipeline, Calibrator_cls, BiasPredictor_cls
         ref_all.append(ref)  # <-- Collect ref
         
         # --- Store model and data for SHAP ---
-        all_models.append(main_pipe.bias_predictor.pipeline)
-        all_xtest_scaled.append(main_pipe.bias_predictor.pipeline.named_steps['scaler'].transform(x_test))
+        all_models.append(main_pipe.bias_predictor.pipeline) # This is either the XGB-Pipeline or the SIR-Regressor
         all_features_df.append(x_test)
+        if model_type == "tree":
+            all_xtest_scaled.append(main_pipe.bias_predictor.pipeline.named_steps['scaler'].transform(x_test))
+
 
     cv_results = pd.DataFrame(stats_cv)
     
@@ -343,67 +427,99 @@ def run_cross_validation(xr_data, ML_pipeline, Calibrator_cls, BiasPredictor_cls
     
     # --- END PLOTTING BLOCK ---
 
-    if sa_config.get('run_bias_shap', False):
-        print("--- Running Bias Sensitivity (SHAP on Bias Model) ---")
-        # Aggregate SHAP values from all folds for a robust summary
-        all_shap_values = []
-            
-        # Use TreeExplainer on each fold's model
-        for i in range(n_splits):
-            model = all_models[i].named_steps['model']
-            X_test_scaled = all_xtest_scaled[i]
-            
-            explainer = shap.TreeExplainer(model)
-            shap_values_fold = explainer.shap_values(X_test_scaled)
-            all_shap_values.append(shap_values_fold)
-            
-        # Concatenate results
-        final_shap_values = np.concatenate(all_shap_values, axis=0)
-        
-        # --- FIX 2: Manually clean string-list columns ---
-        final_features_df = pd.concat(all_features_df, axis=0)
-        for col in final_features_df.columns:
-            if final_features_df[col].dtype == 'object':
-                first_item = final_features_df[col].dropna().iloc[0]
-                if isinstance(first_item, str):
-                    print(f"    Cleaning string column in SHAP: {col}")
-                    final_features_df[col] = final_features_df[col].str.replace(r'[\[\]]', '', regex=True).astype(float)
-                else:
-                    final_features_df[col] = final_features_df[col].astype(float)
-            final_features_df = final_features_df.astype(float) # Final cast
-        # --- END FIX 2 ---
-            
-        # --- 1. GENERATE AND SAVE BAR PLOT (NEW) ---
-        print("--- Calculating Bias SHAP Global Feature Importance ---")
-            
-        # Calculate the mean of the absolute values for each feature
-        mean_abs_shap = np.mean(np.abs(final_shap_values), axis=0)
-        
-        # Get the feature names
-        feature_names = final_features_df.columns
+    # --- START SHAP ON BIAS BLOCK ---
+    if sa_config.get('run_bias_sensitivity', False):
+        print(f"--- Running Bias Sensitivity (Model Type: {model_type}) ---")
 
-        # Combine into a pandas Series and sort for horizontal bar plot
-        shap_scores = pd.Series(mean_abs_shap, index=feature_names)
-        shap_scores = shap_scores.sort_values(ascending=True) # Sort ascending
+        if model_type == "tree":
+            try:
+                print("--- Calculating Bias SHAP (TreeExplainer) ---")
+                all_shap_values = []
+                
+                for i in range(n_splits):
+                    model = all_models[i].named_steps['model']
+                    X_test_scaled = all_xtest_scaled[i]
+                    
+                    explainer = shap.TreeExplainer(model)
+                    shap_values_fold = explainer.shap_values(X_test_scaled)
+                    all_shap_values.append(shap_values_fold)
+                    
+                final_shap_values = np.concatenate(all_shap_values, axis=0)
+                
+                final_features_df = pd.concat(all_features_df, axis=0)
+                # ... (string cleaning logic) ...
+                for col in final_features_df.columns:
+                    if final_features_df[col].dtype == 'object':
+                        if final_features_df[col].dropna().empty:
+                            continue
+                        first_item = final_features_df[col].dropna().iloc[0]
+                        if isinstance(first_item, str):
+                            print(f"    Cleaning string column in SHAP: {col}")
+                            final_features_df[col] = final_features_df[col].str.replace(r'[\[\]]', '', regex=True).astype(float)
+                        else:
+                            final_features_df[col] = final_features_df[col].astype(float)
+                final_features_df = final_features_df.astype(float) # Final cast
+                
+                # --- 1. GENERATE AND SAVE BAR PLOT ---
+                print("--- Calculating Bias SHAP Global Feature Importance ---")
+                mean_abs_shap = np.mean(np.abs(final_shap_values), axis=0)
+                shap_scores = pd.Series(mean_abs_shap, index=final_features_df.columns).sort_values(ascending=True)
 
-        # Generate and save the bar plot
-        fig, ax = plt.subplots(figsize=(10, 8))
-        shap_scores.plot(kind='barh', ax=ax)
-        ax.set_title('Global SHAP Feature Importance (Mean Absolute SHAP Value)')
-        ax.set_xlabel('Mean |SHAP Value| (Impact on Bias Prediction)')
-        plt.tight_layout()
-        
-        bar_plot_path = output_dir / "bias_prediction_shap_importance.png"
-        plt.savefig(bar_plot_path, dpi=150, bbox_inches='tight')
-        plt.close(fig) # Close this specific figure
-        print(f"Saved SHAP importance bar plot to: {bar_plot_path}")
-        
-        # --- 2. GENERATE AND SAVE BEESWARM PLOT (Original) ---
-        shap.summary_plot(final_shap_values, final_features_df, show=False)
-        plot_path = output_dir / "bias_prediction_shap.png"
-        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
-        plt.close() # Close the shap plot figure
-        print(f"Saved bias SHAP beeswarm plot to: {plot_path}")
+                fig, ax = plt.subplots(figsize=(10, 8))
+                shap_scores.plot(kind='barh', ax=ax)
+                ax.set_title('Global SHAP Feature Importance (Mean Absolute SHAP Value)')
+                ax.set_xlabel('Mean |SHAP Value| (Impact on Bias Prediction)')
+                plt.tight_layout()
+                
+                bar_plot_path = output_dir / "bias_prediction_shap_importance.png"
+                plt.savefig(bar_plot_path, dpi=150, bbox_inches='tight')
+                plt.close(fig)
+                print(f"Saved SHAP importance bar plot to: {bar_plot_path}")
+                
+                # --- 2. GENERATE AND SAVE BEESWARM PLOT ---
+                shap.summary_plot(final_shap_values, final_features_df, show=False)
+                plot_path = output_dir / "bias_prediction_shap.png"
+                plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+                plt.close()
+                print(f"Saved bias SHAP beeswarm plot to: {plot_path}")
+
+            except Exception as e:
+                print(f"Could not run bias SHAP (Tree) analysis: {e}")
+                raise e
+
+        elif model_type == "sir":
+            try:
+                print("--- Calculating Bias SIR Feature Importance (Averaged over folds) ---")
+                all_sir_scores = []
+                feature_names = all_features_df[0].columns # Get feature names from first fold
+                
+                for i in range(n_splits):
+                    model = all_models[i] # This is the SIRPolynomialRegressor instance
+                    fold_scores = model.get_feature_importance(feature_names)
+                    all_sir_scores.append(fold_scores)
+                
+                # Average the importances across all folds
+                shap_scores = pd.concat(all_sir_scores, axis=1).mean(axis=1)
+                shap_scores = shap_scores.sort_values(ascending=True) # Sort for barh
+
+                # Generate and save the bar plot
+                fig, ax = plt.subplots(figsize=(10, 8))
+                shap_scores.plot(kind='barh', ax=ax)
+                ax.set_title('Global SIR Feature Importance (Mean Absolute Direction Coefficient)')
+                ax.set_xlabel('Mean |SIR Direction Coefficient| (Impact on Bias Prediction)')
+                plt.tight_layout()
+                
+                bar_plot_path = output_dir / "bias_prediction_sir_importance.png"
+                plt.savefig(bar_plot_path, dpi=150, bbox_inches='tight')
+                plt.close(fig)
+                print(f"Saved SIR importance bar plot to: {bar_plot_path}")
+                print("--- NOTE: Beeswarm plot is not available for SIR model. ---")
+
+            except Exception as e:
+                print(f"Could not run bias SIR analysis: {e}")
+                raise e
+                
+    # --- END SHAP ON BIAS BLOCK ---
 
     return cv_results, y_preds, y_tests
 
@@ -422,7 +538,12 @@ if __name__ == "__main__":
     test_output_dir.mkdir(exist_ok=True)
     
     cv_results,y_preds,y_tests=run_cross_validation(
-        xr_data, pipe_xgb, MinBiasCalibrator, BiasPredictor, MainPipeline,
+        xr_data,
+        ML_pipeline=pipe_xgb,
+        model_type="tree",  # <-- Need to provide this for the test
+        Calibrator_cls=MinBiasCalibrator,
+        BiasPredictor_cls=BiasPredictor,
+        MainPipeline_cls=MainPipeline,
         cv_config={'splitting_mode': 'kfold_shuffled', 'n_splits': 5},
         features_list=['turbulence_intensity'], # Example features
         output_dir=test_output_dir,
