@@ -17,7 +17,8 @@ from wifa_uq.postprocessing.error_predictor.error_predictor import (
     MainPipeline,
     run_cross_validation,
     compute_metrics,
-    run_observation_sensitivity  # <-- IMPORT NEW FUNCTION
+    run_observation_sensitivity,
+    SIRPolynomialRegressor  ## NEW ##
 )
 from wifa_uq.postprocessing.bayesian_calibration import BayesianCalibration
 
@@ -27,7 +28,8 @@ CLASS_MAP = {
     "DefaultParams": DefaultParams,
     "BayesianCalibration": BayesianCalibration,
     "BiasPredictor": BiasPredictor,
-    "XGBRegressor": xgb.XGBRegressor
+    "XGBRegressor": xgb.XGBRegressor,
+    "SIRPolynomialRegressor": SIRPolynomialRegressor ## NEW ##
 }
 
 def get_class_from_map(class_name: str):
@@ -36,14 +38,31 @@ def get_class_from_map(class_name: str):
                          f"Available classes are: {list(CLASS_MAP.keys())}")
     return CLASS_MAP[class_name]
 
-def build_ml_pipeline(config: dict):
-    if config['ml_pipeline'] == "Default hardcoded":
-        return Pipeline([
+
+def build_predictor_pipeline(model_name: str):
+    """
+    Factory function to build the predictor pipeline based on config.
+    Returns the pipeline and a 'model_type' string for SHAP logic.
+    """
+    if model_name == "XGB":
+        print("Building XGBoost Regressor pipeline...")
+        pipeline = Pipeline([
             ("scaler", StandardScaler()),
             ("model", xgb.XGBRegressor(max_depth=3, n_estimators=500))
         ])
+        model_type = "tree"
+        
+    elif model_name == "SIRPolynomial":
+        print("Building SIR+Polynomial Regressor pipeline...")
+        # Note: SIRPolynomialRegressor includes its own scaling
+        pipeline = SIRPolynomialRegressor(n_directions=1, degree=2)
+        model_type = "sir"
+        
     else:
-        raise NotImplementedError("Config-driven ML pipeline is not fully implemented yet.")
+        raise ValueError(f"Unknown model '{model_name}' in config. "
+                         f"Available models are: ['XGB', 'SIRPolynomial']")
+    
+    return pipeline, model_type
 
 def run_workflow(config_path: str | Path):
     """
@@ -54,7 +73,6 @@ def run_workflow(config_path: str | Path):
         config = yaml.safe_load(f)
 
     # --- 0. Resolve Paths ---
-    # ... (same as before) ...
     base_dir = config_path.parent  
     paths_config = config['paths']
     system_yaml_path = base_dir / paths_config['system_config']
@@ -71,7 +89,6 @@ def run_workflow(config_path: str | Path):
 
     # === 1. PREPROCESSING STEP ===
     if config['preprocessing']['run']:
-        # ... (same as before) ...
         print("--- Running Preprocessing ---")
         preprocessor = PreprocessingInputs(
             ref_resource_path=ref_resource_path,
@@ -90,7 +107,6 @@ def run_workflow(config_path: str | Path):
 
     # === 2. DATABASE GENERATION STEP ===
     if config['database_gen']['run']:
-        # ... (same as before) ...
         print("--- Running Database Generation ---")
         param_config = {k: tuple(v) for k, v in config['database_gen']['param_config'].items()}
         
@@ -116,38 +132,57 @@ def run_workflow(config_path: str | Path):
         print(f"Database loaded from {database_path}")
 
     # --- 3. SENSITIVITY ANALYSIS (ON OBSERVATIONS) ---
+    print(f"Database loaded from {database_path}")
+
+    # --- 3. SENSITIVITY ANALYSIS (ON OBSERVATIONS) ---
     sa_config = config.get('sensitivity_analysis', {})
-    if sa_config.get('run_observation_shap', False):
+    err_config = config['error_prediction'] ## NEW ##
+    model_name = err_config.get('model', 'XGB') ## NEW ##
+
+    if sa_config.get('run_observation_sensitivity', False):
+        print(f"--- Running Observation Sensitivity for model: {model_name} ---")
+        # Build a fresh pipeline just for this
+        obs_pipeline, obs_model_type = build_predictor_pipeline(model_name)
+        
         run_observation_sensitivity(
             database=database,
-            features_list=config['error_prediction']['features'],
-            ml_pipeline=build_ml_pipeline(config['error_prediction']),
+            features_list=err_config['features'],
+            ml_pipeline=obs_pipeline,
+            model_type=obs_model_type, # Pass model type for SHAP logic
             output_dir=output_dir
         )
     else:
         print("--- Skipping Observation Sensitivity (as per config) ---")
 
     # === 4. ERROR PREDICTION / UQ STEP ===
-    if config['error_prediction']['run']:
+    if err_config['run']: ## MODIFIED ##
         print("--- Running Error Prediction ---")
         
-        ml_pipeline = build_ml_pipeline(config['error_prediction'])
-        Calibrator_cls = get_class_from_map(config['error_prediction']['calibrator'])
-        Predictor_cls = get_class_from_map(config['error_prediction']['bias_predictor'])
+        ## MODIFIED ##
+        # Get the predictor pipeline and its type
+        ml_pipeline, model_type = build_predictor_pipeline(model_name)
+        
+        Calibrator_cls = get_class_from_map(err_config['calibrator'])
+        Predictor_cls = get_class_from_map(err_config['bias_predictor'])
         MainPipeline_cls = MainPipeline
         
-        print(f"Running cross-validation with calibrator: {Calibrator_cls.__name__}")
+        print(f"Running cross-validation with calibrator: {Calibrator_cls.__name__} "
+              f"and predictor: {model_name}")
+              
         cv_df, y_preds, y_tests = run_cross_validation(
             xr_data=database,
             ML_pipeline=ml_pipeline,
+            model_type=model_type, ## NEW ##
             Calibrator_cls=Calibrator_cls,
             BiasPredictor_cls=Predictor_cls,
             MainPipeline_cls=MainPipeline_cls,
-            cv_config=config['error_prediction']['cross_validation'],
-            features_list=config['error_prediction']['features'], 
+            cv_config=err_config['cross_validation'],
+            features_list=err_config['features'],
             output_dir=output_dir,
-            sa_config=sa_config  # <-- Pass the sensitivity config
+            sa_config=sa_config
         )
+        
+        print("--- Cross-Validation Results (mean) ---")
         
         print("--- Cross-Validation Results (mean) ---")
         print(cv_df.mean())
