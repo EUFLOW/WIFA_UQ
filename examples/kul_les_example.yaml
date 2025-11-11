@@ -21,7 +21,7 @@ preprocessing:
 
 # --- DB Gen now just defines parameters ---
 database_gen:
-  run: true
+  run: false
   flow_model: pywake
   param_config:
     attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b:
@@ -39,17 +39,19 @@ error_prediction:
     - ABL_height
     - wind_veer
     - lapse_rate
-  ml_pipeline: Default hardcoded
+  model: "SIRPolynomial"
   calibrator: MinBiasCalibrator
   bias_predictor: BiasPredictor
   cross_validation:
     run: true
     splitting_mode: kfold_shuffled
-    n_splits: 2
+    n_splits: 6
     metrics:
     - rmse
     - r2
 
 sensitivity_analysis:
-  run_observation_shap: true 
-  run_bias_shap: true
+  # General call for sensitivity. Will run SHAP for "XGB"
+  # or plot "directions_" for "SIRPolynomial".
+  run_observation_sensitivity: true
+  run_bias_sensitivity: true
