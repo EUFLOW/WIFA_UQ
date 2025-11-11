@@ -48,6 +48,7 @@ dependencies = [
     "wayve @ git+https://gitlab.kuleuven.be/TFSO-software/wayve@d4ccdb3e0c02114565e490d7c512b6082abc70d5",
     "wifa @ git+https://github.com/EUFLOW/WIFA@241689074ecccea5f8199c2f6b1ce56708770737",
     "umbra @ git+https://github.com/mworchel/umbra@073bf90b4d53dc653921ba705739a69ca54f0637",
+    "sliced @ git+https://github.com/kilojoules/sliced@ee892bdbde4caf66e8afe5ce7bf48367d0ef6273",
 ]
 
 [project.optional-dependencies]
@@ -85,6 +86,7 @@ xgboost = "~=2.0.3"
 shap = ">=0.48.0,<0.49"
 llvmlite = ">=0.45.1,<0.46"
 numba = ">=0.62.1,<0.63"
+numpy = "*"
 
 [tool.pixi.pypi-dependencies]
 wifa_uq = { path = ".", editable = true }
