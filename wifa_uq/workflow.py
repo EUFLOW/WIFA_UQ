@@ -18,7 +18,7 @@ from wifa_uq.postprocessing.error_predictor.error_predictor import (
     run_cross_validation,
     compute_metrics,
     run_observation_sensitivity,
-    SIRPolynomialRegressor  ## NEW ##
+    SIRPolynomialRegressor  
 )
 from wifa_uq.postprocessing.bayesian_calibration import BayesianCalibration
 
