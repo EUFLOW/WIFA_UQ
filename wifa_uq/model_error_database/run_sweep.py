@@ -177,9 +177,11 @@ if __name__ == "__main__":
     if args.tool == 'foxes':
         run_func = run_foxes
         run_func_kwargs = {'verbosity': 0}
+        out_name = "foxes_samples"
     elif args.tool == 'pywake':
         run_func = run_pywake
         run_func_kwargs = {}
+        out_name = "pywake_samples"
     else:
         raise ValueError("Invalid simulation tool specified. Choose either 'foxes' or 'pywake'.")
 
@@ -203,7 +205,7 @@ if __name__ == "__main__":
     reference_physical_inputs = xr.load_dataset(case_dir / f"{meta['ref_resource']}")
     turb_rated_power=meta['rated_power']
     reference_power=xr.load_dataset(case_dir / f"{meta['ref_power']}")
-    output_dir=case_dir / f"foxes_samples"
+    output_dir=case_dir / out_name
 
     start = time.time()
     print(f"Output directory to save results: {output_dir}")
