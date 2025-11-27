@@ -1,10 +1,11 @@
 import numpy as np
 import xarray as xr
+import argparse
 from typing import Dict, List, Union, Tuple
 from windIO.yaml import load_yaml 
 import time
 from pathlib import Path
-from wifa.pywake_api import run_pywake
+from wifa import run_foxes, run_pywake
 import os
 
 
@@ -44,16 +45,17 @@ def create_parameter_samples(param_config: Dict[str, Tuple[float, float]], n_sam
 
     return samples
 
-def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, Tuple[float, float]], reference_power: dict, 
-              reference_physical_inputs: dict,n_samples: int = 100, seed: int = None, output_dir='cases/default/pywake_sampling/') -> List[xr.Dataset]:
+def run_parameter_sweep(run_func: callable, turb_rated_power,dat: dict, param_config: Dict[str, Tuple[float, float]], reference_power: dict, 
+              reference_physical_inputs: dict,n_samples: int = 100, seed: int = None, output_dir='cases/default/sampling/', run_func_kwargs={}) -> List[xr.Dataset]:
     """
-    run the pywake api for a range of ṕarameter samples
+    run the pywake or foxes api for a range of ṕarameter samples
     compare reference power to pywake power
     calculate the RMSE over the entire farm
     normalize based on rated power
     return the power errors for each sample as a netcdf
 
     Args:
+        run_func: callable to run the simulation (run_foxes or run_pywake)
         turb_rated_power: rated power of a single turbine in the park (for normalizing power errors)
         dat: windIO system dat file
         param_config: specifying which parameters to sample from and ranges of values
@@ -89,13 +91,13 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, Tupl
             path = param_path.split('.')
             set_nested_dict_value(dat, path, param_samples[i])
         
-        sample_dir = f'{output_dir}/sample_{i}'
+        sample_dir = output_dir / f'sample_{i}'
         
         # Run simulation
-        run_pywake(dat, output_dir=sample_dir)
+        run_func(dat, output_dir=sample_dir, **run_func_kwargs)
   
         # Process results (in terms of power)
-        pw_power = xr.open_dataset("results/turbine_data.nc").power.values
+        pw_power = xr.open_dataset(sample_dir / "turbine_data.nc").power.values.T
 
         ref_power = reference_power.power.values  
             # workaround for some cases
@@ -161,6 +163,26 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, Tupl
 
 if __name__ == "__main__":
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "tool",
+        help="The simulation tool, either 'foxes' or 'pywake'",
+    )
+    parser.add_argument(
+        "case",
+        help="The EDF case name",
+    )
+    args = parser.parse_args()
+    
+    if args.tool == 'foxes':
+        run_func = run_foxes
+        run_func_kwargs = {'verbosity': 0}
+    elif args.tool == 'pywake':
+        run_func = run_pywake
+        run_func_kwargs = {}
+    else:
+        raise ValueError("Invalid simulation tool specified. Choose either 'foxes' or 'pywake'.")
+
     # Example usage:
     param_config = {
         "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": (0.01, 0.3),
@@ -168,20 +190,23 @@ if __name__ == "__main__":
     }
 
     # navigating to a file containing metadata required to run pywake api
-    case="HR1"
-    meta_file=f"EDF_datasets/{case}/meta.yaml"
+    case=args.case
+    base_dir = Path(__file__).parent.parent.parent
+    edf_dir = base_dir / "examples" / "data" / "EDF_datasets"
+    case_dir = edf_dir / case
+    meta_file = case_dir / f"meta.yaml"
     meta=load_yaml(Path(meta_file))
 
     print(f"metadata for flow case: {meta}")
     
-    dat = load_yaml(Path(f"EDF_datasets/{case}/{meta['system']}"))
-    reference_physical_inputs = xr.load_dataset(f"EDF_datasets/{case}/{meta['ref_resource']}")
+    dat = load_yaml(case_dir / f"{meta['system']}")
+    reference_physical_inputs = xr.load_dataset(case_dir / f"{meta['ref_resource']}")
     turb_rated_power=meta['rated_power']
-    reference_power=xr.load_dataset(f"EDF_datasets/{case}/{meta['ref_power']}")
-    output_dir=f"EDF_datasets/{case}/pywake_samples"
+    reference_power=xr.load_dataset(case_dir / f"{meta['ref_power']}")
+    output_dir=case_dir / f"foxes_samples"
 
     start = time.time()
     print(f"Output directory to save results: {output_dir}")
-    results = run_parameter_sweep(turb_rated_power,dat,param_config,reference_power,reference_physical_inputs, n_samples=10, seed=3,output_dir=Path(output_dir))
+    results = run_parameter_sweep(run_func, turb_rated_power,dat,param_config,reference_power,reference_physical_inputs, n_samples=10, seed=3,output_dir=output_dir, run_func_kwargs=run_func_kwargs)
     print("Time taken for parameter sweep:", time.time() - start)
     results.to_netcdf('results.nc')

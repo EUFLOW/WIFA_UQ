@@ -1,3 +1,9 @@
 **/__pycache__/
-/wifa_uq.egg-info/
-/examples/umbra4wifa
+*.egg-info/
+uv.lock
+.venv/
+
+examples/umbra4wifa
+**/pywake_samples/
+**/foxes_samples/
+results*
