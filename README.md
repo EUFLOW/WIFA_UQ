@@ -34,3 +34,33 @@ contains scripts related to various applications of wifa UQ (e.g., PCE, bayesian
 a config .yaml file is created to describe the workflow for a given case.
 
 the main.py script will interpret the config script and execute the workflow using the wifa_uq modules
+
+## Architecture Diagram
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        workflow.py                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐   │
+│  │ Preprocessing │───▶│  Database    │───▶│ Error Prediction│   │
+│  │              │    │  Generation  │    │                  │   │
+│  └──────────────┘    └──────────────┘    └────────┬─────────┘   │
+│                                                    │            │
+│                      ┌─────────────────────────────┼────────┐   │
+│                      │                             ▼        │   │
+│                      │  ┌─────────────┐   ┌──────────────┐  │   │
+│                      │  │ Calibrator  │   │ BiasPredictor│  │   │
+│                      │  │ (Global/    │   │ (XGB/SIR)    │  │   │
+│                      │  │  Local)     │   └──────────────┘  │   │
+│                      │  └─────────────┘                     │   │
+│                      │         MainPipeline                 │   │
+│                      └──────────────────────────────────────┘   │
+│                                                                 │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │              Sensitivity Analysis                        │   │
+│  │  ┌────────┐  ┌─────────────────┐  ┌─────────────────┐    │   │
+│  │  │  SHAP  │  │ SIR Directions  │  │  PCE Sobol      │    │   │
+│  │  └────────┘  └─────────────────┘  └─────────────────┘    │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
