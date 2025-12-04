@@ -72,7 +72,7 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, Tupl
     }
 
     samples = create_parameter_samples(param_config, n_samples, seed, manual_first_sample=default)
-    n_flow_cases=reference_power.power.shape[1]
+    n_flow_cases = reference_power.time.size
 
     bias_cap=np.zeros((n_samples, n_flow_cases), dtype=np.float64)
     pw=np.zeros((n_samples, n_flow_cases), dtype=np.float64)
@@ -99,8 +99,8 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, Tupl
 
         ref_power = reference_power.power.values  
             # workaround for some cases
-        # if ref_power.shape == (pw_power.shape[1], pw_power.shape[0]):
-        #     ref_power = ref_power.T
+        if ref_power.shape == (pw_power.shape[1], pw_power.shape[0]):
+            ref_power = ref_power.T
 
         model_err=pw_power-ref_power
         # # in case there are nan reference values (relevant for scada)
