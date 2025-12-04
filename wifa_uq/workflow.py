@@ -7,12 +7,9 @@ import xgboost as xgb
 import pandas as pd
 import numpy as np
 
-# --- Import all library components ---
 from wifa_uq.preprocessing.preprocessing import PreprocessingInputs
 from wifa_uq.model_error_database.database_gen import DatabaseGenerator
 from wifa_uq.postprocessing.error_predictor.error_predictor import (
-    MinBiasCalibrator,
-    DefaultParams,
     BiasPredictor,
     MainPipeline,
     run_cross_validation,
@@ -20,16 +17,36 @@ from wifa_uq.postprocessing.error_predictor.error_predictor import (
     run_observation_sensitivity,
     SIRPolynomialRegressor  
 )
-from wifa_uq.postprocessing.bayesian_calibration import BayesianCalibration
+from wifa_uq.postprocessing.bayesian_calibration import (
+    BayesianCalibration, 
+    BayesianCalibrationWrapper
+)
+from wifa_uq.postprocessing.calibration import (
+    MinBiasCalibrator,
+    DefaultParams,
+    LocalParameterPredictor
+)
 
 # --- Dynamic Class Loading ---
 CLASS_MAP = {
+    # Calibrators
     "MinBiasCalibrator": MinBiasCalibrator,
     "DefaultParams": DefaultParams,
-    "BayesianCalibration": BayesianCalibration,
+    "LocalParameterPredictor": LocalParameterPredictor,
+    # Bayesian 
+    "BayesianCalibration": BayesianCalibrationWrapper,
+    # Predictors
     "BiasPredictor": BiasPredictor,
+    # ML Models
     "XGBRegressor": xgb.XGBRegressor,
-    "SIRPolynomialRegressor": SIRPolynomialRegressor ## NEW ##
+    "SIRPolynomialRegressor": SIRPolynomialRegressor
+}
+
+CALIBRATION_MODES = {
+    "MinBiasCalibrator": "global",
+    "DefaultParams": "global",
+    "LocalParameterPredictor": "local",
+    "BayesianCalibration": "global"
 }
 
 def get_class_from_map(class_name: str):
@@ -98,7 +115,6 @@ def run_workflow(config_path: str | Path):
         preprocessor.run_pipeline()
         print("Preprocessing complete.")
     else:
-        # ... (same as before) ...
         print("--- Skipping Preprocessing (as per config) ---")
         processed_resource_path = ref_resource_path
         if not processed_resource_path.exists():
@@ -108,7 +124,7 @@ def run_workflow(config_path: str | Path):
     # === 2. DATABASE GENERATION STEP ===
     if config['database_gen']['run']:
         print("--- Running Database Generation ---")
-        param_config = {k: tuple(v) for k, v in config['database_gen']['param_config'].items()}
+        param_config = config['database_gen']['param_config']
         
         db_generator = DatabaseGenerator(
             nsamples=config['database_gen']['n_samples'],
@@ -148,8 +164,10 @@ def run_workflow(config_path: str | Path):
             database=database,
             features_list=err_config['features'],
             ml_pipeline=obs_pipeline,
-            model_type=obs_model_type, # Pass model type for SHAP logic
-            output_dir=output_dir
+            model_type=obs_model_type,
+            output_dir=output_dir,
+            method=sa_config.get('method', 'auto'),
+            pce_config=sa_config.get('pce_config', {})
         )
     else:
         print("--- Skipping Observation Sensitivity (as per config) ---")
@@ -158,10 +176,11 @@ def run_workflow(config_path: str | Path):
     if err_config['run']: ## MODIFIED ##
         print("--- Running Error Prediction ---")
         
-        ## MODIFIED ##
         # Get the predictor pipeline and its type
         ml_pipeline, model_type = build_predictor_pipeline(model_name)
         
+        calibrator_name = err_config['calibrator']
+        calibration_mode = CALIBRATION_MODES.get(calibrator_name, "global")
         Calibrator_cls = get_class_from_map(err_config['calibrator'])
         Predictor_cls = get_class_from_map(err_config['bias_predictor'])
         MainPipeline_cls = MainPipeline
@@ -179,7 +198,8 @@ def run_workflow(config_path: str | Path):
             cv_config=err_config['cross_validation'],
             features_list=err_config['features'],
             output_dir=output_dir,
-            sa_config=sa_config
+            sa_config=sa_config,
+            calibration_mode=calibration_mode,
         )
         
         print("--- Cross-Validation Results (mean) ---")
