@@ -35,7 +35,7 @@ class DatabaseGenerator:
             model (str, optional): Model to use. Defaults to "pywake".
         """
         self.nsamples = nsamples
-        self.param_config = param_config
+        self.param_config = self._normalize_param_config(param_config)
         self.model = model
         self.system_yaml_path = Path(system_yaml_path)
         self.ref_power_path = Path(ref_power_path)
@@ -55,6 +55,33 @@ class DatabaseGenerator:
             raise FileNotFoundError(f"Processed resource file not found: {self.processed_resource_path}")
         if not self.wf_layout_path.exists():
             raise FileNotFoundError(f"Wind farm layout file not found: {self.wf_layout_path}")
+
+
+    
+    def _normalize_param_config(self, param_config: dict) -> dict:
+        """
+        Normalize param_config to full format.
+        Handles both simple [min, max] and full {range, default, short_name} formats.
+        """
+        normalized = {}
+        for path, config in param_config.items():
+            if isinstance(config, list):
+                # Simple format: [min, max]
+                short_name = path.split('.')[-1]  # Use last part of path
+                normalized[path] = {
+                    "range": config,
+                    "default": None,
+                    "short_name": short_name
+                }
+            elif isinstance(config, dict):
+                # Full format
+                if "short_name" not in config:
+                    config["short_name"] = path.split('.')[-1]
+                normalized[path] = config
+            else:
+                raise ValueError(f"Invalid param_config format for {path}")
+        
+        return normalized
 
     def _infer_rated_power(self, wf_dat: dict, system_dat: dict) -> float:
         """
