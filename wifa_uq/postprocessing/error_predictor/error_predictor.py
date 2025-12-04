@@ -507,9 +507,37 @@ def run_cross_validation(xr_data, ML_pipeline, model_type, Calibrator_cls, BiasP
             pw = val_data_fold["pw_power_cap"].values
             ref = val_data_fold["ref_power_cap"].values
         else:
-            # Local calibration: per-case sample index; skip power aggregation here
-            pw = None
-            ref = None
+
+            # Local calibration: idxs is an array of per-case sample indices
+            # We must build pw/ref per test case using those indices.
+            idxs = np.asarray(idxs)
+            if idxs.shape[0] != len(test_indices):
+                raise ValueError(
+                    f"Local calibration returned {idxs.shape[0]} indices, "
+                    f"but there are {len(test_indices)} test cases."
+                )
+
+            pw_list = []
+            ref_list = []
+
+            # dataset_test.case_index is the subset used inside MainPipeline
+            local_case_indices = dataset_test.case_index.values
+
+            for local_case_idx, sample_idx in enumerate(idxs):
+                case_index_val = local_case_indices[local_case_idx]
+
+                # Pick the appropriate sample & case_index from validation_data
+                this_point = validation_data.sel(
+                    sample=int(sample_idx),
+                    case_index=case_index_val
+                )
+
+                pw_list.append(float(this_point["pw_power_cap"].values))
+                ref_list.append(float(this_point["ref_power_cap"].values))
+
+            pw = np.array(pw_list)
+            ref = np.array(ref_list)
+
 
         stats = compute_metrics(y_test, y_pred, pw=pw, ref=ref)
         stats_cv.append(stats)
@@ -519,17 +547,12 @@ def run_cross_validation(xr_data, ML_pipeline, model_type, Calibrator_cls, BiasP
         pw_all.append(pw)
         ref_all.append(ref)
 
-        # --- Store model and data for SHAP ---
+        # --- Store model and data for SHAP / SIR global importance ---
         all_models.append(main_pipe.bias_predictor.pipeline)
         all_features_df.append(x_test)
         if model_type == "tree":
-            all_xtest_scaled.append(main_pipe.bias_predictor.pipeline.named_steps['scaler'].transform(x_test))
-        
-        # --- Store model and data for SHAP ---
-        all_models.append(main_pipe.bias_predictor.pipeline) # This is either the XGB-Pipeline or the SIR-Regressor
-        all_features_df.append(x_test)
-        if model_type == "tree":
-            all_xtest_scaled.append(main_pipe.bias_predictor.pipeline.named_steps['scaler'].transform(x_test))
+            X_test_scaled = main_pipe.bias_predictor.pipeline.named_steps['scaler'].transform(x_test)
+            all_xtest_scaled.append(X_test_scaled)
 
 
     cv_results = pd.DataFrame(stats_cv)
@@ -539,9 +562,13 @@ def run_cross_validation(xr_data, ML_pipeline, model_type, Calibrator_cls, BiasP
     # Flatten all fold results into single arrays for plotting
     y_preds_flat = np.concatenate(y_preds)
     y_tests_flat = np.concatenate(y_tests)
-    pw_flat = np.concatenate(pw_all)
-    ref_flat = np.concatenate(ref_all)
-    corrected_power_flat = pw_flat - y_preds_flat # Note: Bias is (Model - Ref), so Corrected = Model - Bias
+
+    have_power = all(p is not None for p in pw_all) and all(r is not None for r in ref_all)
+    
+    if have_power:
+        pw_flat = np.concatenate(pw_all)
+        ref_flat = np.concatenate(ref_all)
+        corrected_power_flat = pw_flat - y_preds_flat
 
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
     fig.suptitle('Cross-Validation Model Performance', fontsize=16)
