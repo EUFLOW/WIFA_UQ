@@ -21,15 +21,17 @@ preprocessing:
 
 # --- DB Gen now just defines parameters ---
 database_gen:
-  run: false
+  run: true
   flow_model: pywake
   param_config:
     attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b:
-    - 0.01
-    - 0.07
+      range: [0.01, 0.07]
+      default: 0.04           # ← Default value for baseline comparison
+      short_name: "k_b"       # ← Name used in database coordinates
     attributes.analysis.blockage_model.ss_alpha:
-    - 0.75  # You can use any range; [0.75, 1.0] is used in the other example
-    - 1.0
+      range: [0.75, 1.0]
+      default: 0.875
+      short_name: "ss_alpha"
   n_samples: 100
 
 # --- Error Prediction ---
@@ -40,7 +42,7 @@ error_prediction:
     - wind_veer
     - lapse_rate
   model: "SIRPolynomial"
-  calibrator: MinBiasCalibrator
+  calibrator: LocalParameterPredictor
   bias_predictor: BiasPredictor
   cross_validation:
     run: true
