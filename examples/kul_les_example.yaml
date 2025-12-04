@@ -41,8 +41,15 @@ error_prediction:
     - ABL_height
     - wind_veer
     - lapse_rate
-  model: "SIRPolynomial"
-  calibrator: LocalParameterPredictor
+  model: "PCE"
+  model_params:
+    degree: 5                  # PCE polynomial degree
+    marginals: "kernel"        # "kernel", "uniform", "normal"
+    copula: "independent"      # "independent" or "normal"
+    q: 0.5                     # hyperbolic truncation parameter
+    max_features: 5            # safety limit
+    allow_high_dim: false      # refuse > 5 inputs unless set true
+  calibrator: MinBiasCalibrator
   bias_predictor: BiasPredictor
   cross_validation:
     run: true

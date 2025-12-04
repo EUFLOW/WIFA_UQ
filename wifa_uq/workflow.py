@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 
 from wifa_uq.preprocessing.preprocessing import PreprocessingInputs
+from wifa_uq.postprocessing.error_predictor.error_predictor import PCERegressor
 from wifa_uq.model_error_database.database_gen import DatabaseGenerator
 from wifa_uq.postprocessing.error_predictor.error_predictor import (
     BiasPredictor,
@@ -56,11 +57,13 @@ def get_class_from_map(class_name: str):
     return CLASS_MAP[class_name]
 
 
-def build_predictor_pipeline(model_name: str):
+def build_predictor_pipeline(model_name: str, model_params: dict | None = None):
     """
     Factory function to build the predictor pipeline based on config.
     Returns the pipeline and a 'model_type' string for SHAP logic.
     """
+    if model_params is None:
+       model_params = {}
     if model_name == "XGB":
         print("Building XGBoost Regressor pipeline...")
         pipeline = Pipeline([
@@ -75,10 +78,18 @@ def build_predictor_pipeline(model_name: str):
         pipeline = SIRPolynomialRegressor(n_directions=1, degree=2)
         model_type = "sir"
         
+    elif model_name == "PCE":
+        print("Building PCE Regressor pipeline...")
+
+        # model_params come directly from YAML (error_prediction.model_params)
+        # They are passed as kwargs to PCERegressor, e.g.:
+        #   degree, marginals, copula, q, max_features, allow_high_dim
+
+        pipeline = PCERegressor(**model_params)
+        model_type = "pce" 
     else:
         raise ValueError(f"Unknown model '{model_name}' in config. "
-                         f"Available models are: ['XGB', 'SIRPolynomial']")
-    
+                        f"Available models are: ['XGB', 'SIRPolynomial', 'PCE']")
     return pipeline, model_type
 
 def run_workflow(config_path: str | Path):
@@ -154,11 +165,12 @@ def run_workflow(config_path: str | Path):
     sa_config = config.get('sensitivity_analysis', {})
     err_config = config['error_prediction'] ## NEW ##
     model_name = err_config.get('model', 'XGB') ## NEW ##
+    model_params = err_config.get('model_params', {})
 
     if sa_config.get('run_observation_sensitivity', False):
         print(f"--- Running Observation Sensitivity for model: {model_name} ---")
         # Build a fresh pipeline just for this
-        obs_pipeline, obs_model_type = build_predictor_pipeline(model_name)
+        obs_pipeline, obs_model_type = build_predictor_pipeline(model_name, model_params)
         
         run_observation_sensitivity(
             database=database,
@@ -177,7 +189,7 @@ def run_workflow(config_path: str | Path):
         print("--- Running Error Prediction ---")
         
         # Get the predictor pipeline and its type
-        ml_pipeline, model_type = build_predictor_pipeline(model_name)
+        ml_pipeline, model_type = build_predictor_pipeline(model_name, model_params)
         
         calibrator_name = err_config['calibrator']
         calibration_mode = CALIBRATION_MODES.get(calibrator_name, "global")

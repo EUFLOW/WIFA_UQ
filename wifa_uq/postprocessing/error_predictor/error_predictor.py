@@ -13,6 +13,8 @@ from sklearn.exceptions import NotFittedError
 import xgboost as xgb
 from sklearn.model_selection import KFold, LeaveOneGroupOut
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from wifa_uq.postprocessing.PCE_tool.pce_utils import construct_PCE_ot
+
 
 try:
     from sliced import SlicedInverseRegression
@@ -30,6 +32,70 @@ This script contains:
 - Cross validation routine
 - SHAP/SIR sensitivity analysis functions
 """
+
+
+class PCERegressor(BaseEstimator, RegressorMixin):
+    """
+    A scikit-learn compatible regressor that wraps the OpenTURNS-based PCE
+    from PCE_tool.
+
+    Safety guard:
+      - By default, refuses to run if the number of input features > max_features
+        unless allow_high_dim=True is explicitly set.
+    """
+
+    def __init__(
+        self,
+        degree=5,
+        marginals="kernel",
+        copula="independent",
+        q=1.0,
+        max_features=5,          # safety limit on input dimension
+        allow_high_dim=False     # must be True to allow > max_features
+    ):
+        self.degree = degree
+        self.marginals = marginals
+        self.copula = copula
+        self.q = q
+        self.max_features = max_features
+        self.allow_high_dim = allow_high_dim
+
+    def fit(self, X, y):
+        X = np.asarray(X)
+        y = np.asarray(y).ravel()
+
+        n_features = X.shape[1]
+
+        # --- Safety check on dimensionality ---
+        if n_features > self.max_features and not self.allow_high_dim:
+            raise ValueError(
+                f"PCERegressor refused to run: number of input variables = {n_features}, "
+                f"which exceeds the default safety limit of {self.max_features}. "
+                f"Set allow_high_dim=True or increase max_features to override."
+            )
+
+        marginals = [self.marginals] * n_features
+
+        # Construct PCE using your existing helper
+        self.pce_result_ = construct_PCE_ot(
+            input_array=X,
+            output_array=y,
+            marginals=marginals,
+            copula=self.copula,
+            degree=self.degree,
+            q=self.q,
+        )
+        self.metamodel_ = self.pce_result_.getMetaModel()
+        return self
+
+    def predict(self, X):
+        if not hasattr(self, "metamodel_"):
+            raise NotFittedError("PCERegressor instance is not fitted yet.")
+        X = np.asarray(X)
+        preds = np.zeros(X.shape[0])
+        for i, xi in enumerate(X):
+            preds[i] = self.metamodel_(xi)[0]
+        return preds
 
 ## ------------------------------------------------------------------ ##
 ## NEW REGRESSOR CLASS
@@ -333,7 +399,18 @@ def run_observation_sensitivity(database, features_list, ml_pipeline, model_type
     
     # Determine method
     if method == "auto":
-        method = "shap" if model_type == "tree" else "sir"
+       if model_type == "tree":
+           method = "shap"
+       elif model_type == "sir":
+           method = "sir"
+       elif model_type == "pce":
+           # For PCE models, default "auto" to PCE-based Sobol SA
+           method = "pce_sobol"
+       else:
+           raise ValueError(
+               f"Unknown model_type '{model_type}' for 'auto' sensitivity. "
+               f"Expected one of ['tree', 'sir', 'pce']."
+           )
     
     if method == "pce_sobol":
         # PCE-based Sobol indices

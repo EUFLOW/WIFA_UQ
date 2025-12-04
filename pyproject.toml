@@ -63,6 +63,7 @@ dev = [
     "ncplot",
     "nctoolkit",
     "cartopy",
+    "openturns",
 ]
 
 [project.urls]
@@ -87,6 +88,7 @@ shap = ">=0.48.0,<0.49"
 llvmlite = ">=0.45.1,<0.46"
 numba = ">=0.62.1,<0.63"
 numpy = "*"
+openturns = ">=1.26,<2"
 
 [tool.pixi.pypi-dependencies]
 wifa_uq = { path = ".", editable = true }
