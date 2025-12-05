@@ -2,5 +2,5 @@ name: FLOW UQ vnv study on toy problem, 4 WT Wind Farm
 layouts:
         -  coordinates:
             x: [0]
-            y: [0]        
+            y: [0]
 turbines: !include ../plant_energy_turbine/IEA15MW_turbine.yaml

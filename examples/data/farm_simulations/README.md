@@ -11,26 +11,26 @@ The actual ABL heights are derived from the simulation data, and these heights a
 
 - **Wind Speed [m/s]**: [10.5]
 - **Turbine**: IEA15MW, hub height = 150m and D = 240m
-- **TI** at hub height is derived from the code_saturne simulation and specified in the Farm_calibration_data_IEA15MW.nc file. 
-- **Layout** :  
+- **TI** at hub height is derived from the code_saturne simulation and specified in the Farm_calibration_data_IEA15MW.nc file.
+- **Layout** :
     - Turbine Number : [4, 25, 100]
-    - Turbine Layout : [dX5dY5, dX7dY5, dX9dY5] 
+    - Turbine Layout : [dX5dY5, dX7dY5, dX9dY5]
 
 ## NetCDF Files
 
 There are two NetCDF files for each layout in `Result_code_saturne_Farm_calibration_data/farm_result`:
 
-- `flow_field.nc`:  Interpolated flow field at hub height 
+- `flow_field.nc`:  Interpolated flow field at hub height
 - `turbine_data.nc`: This NetCDF file contains the disk-averaged velocity, wind direction at the turbine position, and power for all the cases.
 
-Only a subset of the data has been uploaded to GitLab to avoid large files in the repository. The full dataset can be found here: 
+Only a subset of the data has been uploaded to GitLab to avoid large files in the repository. The full dataset can be found here:
 https://dtudk.sharepoint.com/:f:/r/sites/CL5-2021-D3-02-04-Physicsandaerodynamicsofatmosphericflowofw/Delte%20dokumenter/General/WP4/T4.3/farm_simulations?csf=1&web=1&e=6v28ur
 
 ## MeteoFiles
 
 This directory contains the vertical profiles of velocity, temperature, and turbulence for all cases, which are used as inlet conditions for the code_saturne simulation.
 
-## Plot Profiles : 
+## Plot Profiles :
 
 `PlotProfiles_from_flowfield.py`
 """To plot the longitudinal profile at y=0 and transversal profiles for x=5D,10D and 15D for a given case number"""
@@ -46,5 +46,3 @@ This directory contains the vertical profiles of velocity, temperature, and turb
 `Plot2Dmap_from_interpolated_flowfield.py`
 """ Plot flow map from interpolated field """"
  -Set the Case Number
-
-
