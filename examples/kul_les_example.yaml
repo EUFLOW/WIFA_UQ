@@ -8,7 +8,7 @@ paths:
   reference_power: data/KUL_LES/observed_output/observedPowerKUL.nc
   reference_resource: data/KUL_LES/plant_energy_resource/originalData.nc
   wind_farm_layout: data/KUL_LES/plant_wind_farm/FLOW_UQ_vnv_toy_study_wind_farm.yaml
-  
+
   # --- Define output locations ---
   output_dir: data/KUL_LES/wifa_uq_results # All results will be saved here
   processed_resource_file: "processed_physical_inputs.nc" # Will be saved in output_dir
@@ -17,7 +17,7 @@ paths:
 # --- Preprocessing now operates on the files above ---
 preprocessing:
   run: true
-  steps: [recalculate_params] 
+  steps: [recalculate_params]
 
 # --- DB Gen now just defines parameters ---
 database_gen:

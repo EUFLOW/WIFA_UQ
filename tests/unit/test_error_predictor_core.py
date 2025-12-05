@@ -2,6 +2,7 @@
 """
 Tests for core error predictor models (SIR, PCE).
 """
+
 import numpy as np
 from sklearn.metrics import r2_score
 
@@ -34,9 +35,9 @@ class TestSIRPolynomialRegressor:
 
         model = SIRPolynomialRegressor(n_directions=1, degree=2)
         model.fit(X, y)
-        
+
         importance = model.get_feature_importance(["f1", "f2", "f3"])
-        
+
         assert len(importance) == 3
         assert list(importance.index) == ["f1", "f2", "f3"]
 
@@ -50,7 +51,7 @@ class TestPCERegressor:
         y = X[:, 0] ** 2
 
         pce = PCERegressor(degree=3, max_features=5, allow_high_dim=False)
-        
+
         try:
             pce.fit(X, y)
             assert False, "Expected ValueError for too many features"
@@ -60,7 +61,7 @@ class TestPCERegressor:
     def test_learns_simple_polynomial(self):
         """PCE with degree 2 should learn y = x² almost perfectly."""
         x = np.linspace(-1, 1, 30)
-        y = x ** 2
+        y = x**2
         X = x.reshape(-1, 1)
 
         pce = PCERegressor(
@@ -88,5 +89,5 @@ class TestPCERegressor:
         )
         pce.fit(X, y)  # Should not raise
         y_pred = pce.predict(X)
-        
+
         assert len(y_pred) == 100

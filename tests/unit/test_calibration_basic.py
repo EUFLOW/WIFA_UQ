@@ -2,7 +2,6 @@
 """
 Tests for basic calibration classes.
 """
-import numpy as np
 
 from wifa_uq.postprocessing.calibration.basic_calibration import (
     MinBiasCalibrator,
@@ -18,7 +17,7 @@ class TestMinBiasCalibrator:
         """Should find the sample index with minimum total absolute bias."""
         cal = MinBiasCalibrator(tiny_bias_db)
         cal.fit()
-        
+
         assert isinstance(cal.best_idx_, int)
         assert cal.best_idx_ >= 0
         assert cal.best_idx_ < len(tiny_bias_db.sample)
@@ -27,7 +26,7 @@ class TestMinBiasCalibrator:
         """Should extract parameter values at the best index."""
         cal = MinBiasCalibrator(tiny_bias_db)
         cal.fit()
-        
+
         assert "k_b" in cal.best_params_
         assert "ss_alpha" in cal.best_params_
         assert isinstance(cal.best_params_["k_b"], float)
@@ -41,7 +40,7 @@ class TestDefaultParams:
         """Should find sample closest to default parameter values."""
         cal = DefaultParams(tiny_bias_db)
         cal.fit()
-        
+
         assert isinstance(cal.best_idx_, int)
         assert cal.best_params_
         assert "k_b" in cal.best_params_
@@ -50,7 +49,7 @@ class TestDefaultParams:
         """The best params should be close to the specified defaults."""
         cal = DefaultParams(tiny_bias_db)
         cal.fit()
-        
+
         # From fixture: param_defaults = {"k_b": 0.04, "ss_alpha": 0.875}
         assert abs(cal.best_params_["k_b"] - 0.04) < 0.02
 
@@ -86,8 +85,8 @@ class TestLocalParameterPredictor:
         features = ["ABL_height", "wind_veer", "lapse_rate"]
         cal = LocalParameterPredictor(tiny_bias_db, feature_names=features)
         cal.fit()
-        
+
         indices = cal.get_optimal_indices()
-        
+
         assert len(indices) == len(tiny_bias_db.case_index)
         assert all(0 <= idx < len(tiny_bias_db.sample) for idx in indices)

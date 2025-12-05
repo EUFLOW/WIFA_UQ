@@ -26,7 +26,7 @@ The examples folder contains implementations of bayesian calibration and model c
 ### preprocessing
 the preprocessing.py scripts carries out several steps such as interpolating the height dimension such that all cases are the same, and recalculating atmospheric input parameters from the vertical profile of potential temperature. These are based on the requirements of the datasets used so far. Further steps may be required for future datasets.
 
-### postprocessing 
+### postprocessing
 contains scripts related to various applications of wifa UQ (e.g., PCE, bayesian calibration, error predictor).
 
 ## Implementation

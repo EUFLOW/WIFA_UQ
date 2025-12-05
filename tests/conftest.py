@@ -4,17 +4,17 @@ Pytest fixtures for WIFA-UQ tests.
 
 These fixtures provide windIO-compliant test data structures.
 """
+
 import pytest
 import numpy as np
 import xarray as xr
-from pathlib import Path
 
 
 @pytest.fixture
 def tiny_bias_db():
     """
     Synthetic stacked database mimicking results_stacked_hh.nc, but tiny.
-    
+
     This fixture represents the OUTPUT of DatabaseGenerator.generate_database(),
     which includes all the variables that downstream code (like run_cross_validation)
     expects.
@@ -52,9 +52,9 @@ def tiny_bias_db():
     # Synthetic bias: driven by ABL_height plus param effects
     # shape (sample, flow_case)
     model_bias_cap = (
-        0.5 * k_b[:, None] +
-        0.2 * ss_alpha[:, None] +
-        0.1 * (ABL_height[None, :] / 1000.0)
+        0.5 * k_b[:, None]
+        + 0.2 * ss_alpha[:, None]
+        + 0.1 * (ABL_height[None, :] / 1000.0)
     )
 
     pw_power_cap = 0.5 + model_bias_cap
@@ -84,7 +84,7 @@ def tiny_bias_db():
 
     # Add wind_farm dimension (mimics DatabaseGenerator)
     ds = ds.expand_dims(dim={"wind_farm": ["TinyFarm"]})
-    
+
     # Add turb_rated_power - REQUIRED by run_cross_validation
     ds["turb_rated_power"] = xr.DataArray([2.0e6], dims=["wind_farm"])
 
@@ -99,7 +99,7 @@ def tiny_bias_db():
 def windio_turbine_dict():
     """
     A windIO-compliant turbine definition dict.
-    
+
     Based on windIO/plant/turbine.yaml schema.
     Includes performance.rated_power which is the cleanest way to specify power.
     """
@@ -124,7 +124,7 @@ def windio_turbine_dict():
 def windio_turbine_with_power_curve():
     """
     A windIO-compliant turbine definition using power_curve instead of rated_power.
-    
+
     This tests the fallback inference path in _infer_rated_power.
     """
     return {
@@ -148,7 +148,7 @@ def windio_turbine_with_power_curve():
 def windio_wind_farm_dict(windio_turbine_dict):
     """
     A windIO-compliant wind_farm definition dict.
-    
+
     Based on windIO/plant/wind_farm.yaml schema.
     """
     return {
@@ -157,7 +157,7 @@ def windio_wind_farm_dict(windio_turbine_dict):
             {
                 "coordinates": {
                     "x": [0.0, 500.0, 250.0],  # Triangle layout
-                    "y": [0.0, 0.0, 400.0],    # Not collinear!
+                    "y": [0.0, 0.0, 400.0],  # Not collinear!
                 }
             }
         ],
@@ -169,7 +169,7 @@ def windio_wind_farm_dict(windio_turbine_dict):
 def windio_system_dict(windio_wind_farm_dict):
     """
     A windIO-compliant wind_energy_system definition dict.
-    
+
     Based on windIO/plant/wind_energy_system.yaml schema.
     This is a minimal system config for testing.
     """
@@ -214,7 +214,10 @@ def sample_physical_inputs():
     return xr.Dataset(
         data_vars=dict(
             wind_speed=(("flow_case", "height"), np.ones((5, 3)) * 8.0),
-            wind_direction=(("flow_case",), np.array([270.0, 280.0, 290.0, 300.0, 310.0])),
+            wind_direction=(
+                ("flow_case",),
+                np.array([270.0, 280.0, 290.0, 300.0, 310.0]),
+            ),
             potential_temperature=(("flow_case", "height"), np.ones((5, 3)) * 280.0),
         ),
         coords=dict(
@@ -228,7 +231,7 @@ def sample_physical_inputs():
 def pywake_param_config():
     """
     Standard parameter config for PyWake sweep tests.
-    
+
     Keys are dot-separated paths matching windIO system.yaml structure.
     """
     return {

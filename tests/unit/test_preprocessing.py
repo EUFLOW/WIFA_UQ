@@ -2,7 +2,7 @@
 """
 Tests for preprocessing module.
 """
-from pathlib import Path
+
 import numpy as np
 import xarray as xr
 
@@ -26,9 +26,7 @@ class TestPreprocessingNoSteps:
         output_path = tmp_path / "processed.nc"
 
         preproc = PreprocessingInputs(
-            ref_resource_path=input_path,
-            output_path=output_path,
-            steps=[]
+            ref_resource_path=input_path, output_path=output_path, steps=[]
         )
         out = preproc.run_pipeline()
 
@@ -49,15 +47,18 @@ class TestPreprocessingRecalculateParams:
 
         height = np.linspace(0, 500, 6)
         time = np.arange(4)
-        
+
         wind_speed = np.tile(np.linspace(5.0, 10.0, 6), (4, 1))  # (time, height)
         potential_temperature = 280.0 + 0.005 * height  # stable stratification
         wind_direction = 270.0 + 0.01 * height  # directional shear
-        
+
         ds = xr.Dataset(
             data_vars=dict(
                 wind_speed=(("time", "height"), wind_speed),
-                potential_temperature=(("time", "height"), np.tile(potential_temperature, (4, 1))),
+                potential_temperature=(
+                    ("time", "height"),
+                    np.tile(potential_temperature, (4, 1)),
+                ),
                 k=(("time", "height"), np.ones((4, 6)) * 0.5),
                 wind_direction=(("time", "height"), np.tile(wind_direction, (4, 1))),
             ),
@@ -101,7 +102,10 @@ class TestPreprocessingRecalculateParams:
         ds = xr.Dataset(
             data_vars=dict(
                 wind_speed=(("time", "height"), wind_speed),
-                potential_temperature=(("time", "height"), np.tile(potential_temperature, (2, 1))),
+                potential_temperature=(
+                    ("time", "height"),
+                    np.tile(potential_temperature, (2, 1)),
+                ),
             ),
             coords=dict(time=time, height=height),
         )
@@ -116,7 +120,7 @@ class TestPreprocessingRecalculateParams:
         preproc.run_pipeline()
 
         ds_out = xr.load_dataset(output_path)
-        
+
         # TI should not exist (because 'k' is missing)
         assert "turbulence_intensity" not in ds_out
         # But other fields should still be present

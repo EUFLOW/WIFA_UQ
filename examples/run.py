@@ -1,6 +1,6 @@
 import sys
-import os
 from pathlib import Path
+from wifa_uq.workflow import run_workflow
 
 # --- Add the project root to the Python path ---
 # This ensures that the script can find the 'wifa_uq' package
@@ -8,14 +8,6 @@ from pathlib import Path
 project_root = Path(__file__).parent.resolve()
 sys.path.insert(0, str(project_root))
 
-#try:
-from wifa_uq.workflow import run_workflow
-#except ImportError:
-#    print("Error: Could not import 'run_workflow' from 'wifa_uq.workflow'.")
-#    print("Please ensure:")
-#    print(f"  1. You are running this script from the project root: {project_root}")
-#    print("  2. The 'wifa_uq' package exists and 'workflow.py' is inside it.")
-#    sys.exit(1)
 
 def main():
     """
@@ -33,14 +25,14 @@ def main():
     if not config_path.exists():
         print(f"Error: Configuration file not found at: {config_path.resolve()}")
         sys.exit(1)
-    
+
     # --- Run the Workflow ---
-    print(f"--- Starting WIFA-UQ Workflow ---")
+    print("--- Starting WIFA-UQ Workflow ---")
     print(f"Using config file: {config_path.resolve()}")
-    
+
     run_workflow(config_path)
-    print(f"--- Workflow Finished Successfully ---")
-        
+    print("--- Workflow Finished Successfully ---")
+
 
 if __name__ == "__main__":
     main()

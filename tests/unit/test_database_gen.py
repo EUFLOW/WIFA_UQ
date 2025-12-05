@@ -5,9 +5,8 @@ Tests for DatabaseGenerator.
 These tests use windIO-compliant fixtures and mock run_parameter_sweep
 to avoid heavy simulations.
 """
+
 import json
-from pathlib import Path
-from unittest.mock import patch
 import numpy as np
 import xarray as xr
 import yaml
@@ -22,7 +21,10 @@ class TestNormalizeParamConfig:
         """Simple [min, max] format should be normalized to full dict."""
         gen = DatabaseGenerator.__new__(DatabaseGenerator)
         param_config = {
-            "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": [0.01, 0.07],
+            "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": [
+                0.01,
+                0.07,
+            ],
         }
         normalized = gen._normalize_param_config(param_config)
 
@@ -52,7 +54,10 @@ class TestNormalizeParamConfig:
         """Both formats in same config should work."""
         gen = DatabaseGenerator.__new__(DatabaseGenerator)
         param_config = {
-            "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": [0.01, 0.07],
+            "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": [
+                0.01,
+                0.07,
+            ],
             "attributes.analysis.blockage_model.ss_alpha": {
                 "range": [0.75, 1.0],
                 "default": 0.875,
@@ -62,8 +67,16 @@ class TestNormalizeParamConfig:
         normalized = gen._normalize_param_config(param_config)
 
         assert len(normalized) == 2
-        assert normalized["attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b"]["short_name"] == "k_b"
-        assert normalized["attributes.analysis.blockage_model.ss_alpha"]["short_name"] == "alpha"
+        assert (
+            normalized[
+                "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b"
+            ]["short_name"]
+            == "k_b"
+        )
+        assert (
+            normalized["attributes.analysis.blockage_model.ss_alpha"]["short_name"]
+            == "alpha"
+        )
 
 
 class TestInferRatedPower:
@@ -72,27 +85,27 @@ class TestInferRatedPower:
     def test_from_rated_power_key(self, windio_turbine_dict):
         """Should find rated_power from performance.rated_power."""
         gen = DatabaseGenerator.__new__(DatabaseGenerator)
-        
+
         wf_dat = {"turbines": windio_turbine_dict}
         system_dat = {}
-        
+
         power = gen._infer_rated_power(wf_dat, system_dat)
         assert power == 15.0e6
 
     def test_from_power_curve(self, windio_turbine_with_power_curve):
         """Should infer rated_power from max of power_curve.power_values."""
         gen = DatabaseGenerator.__new__(DatabaseGenerator)
-        
+
         wf_dat = {"turbines": windio_turbine_with_power_curve}
         system_dat = {}
-        
+
         power = gen._infer_rated_power(wf_dat, system_dat)
         assert power == 10.0e6  # max of power_values
 
     def test_from_turbine_name(self):
         """Should parse 'XMW' from turbine name as last resort."""
         gen = DatabaseGenerator.__new__(DatabaseGenerator)
-        
+
         # Turbine with only name, no performance data
         wf_dat = {
             "turbines": {
@@ -102,27 +115,27 @@ class TestInferRatedPower:
             }
         }
         system_dat = {}
-        
+
         power = gen._infer_rated_power(wf_dat, system_dat)
         assert power == 22.0e6
 
     def test_from_system_dat_fallback(self, windio_turbine_dict):
         """Should check system_dat['wind_farm']['turbines'] as fallback."""
         gen = DatabaseGenerator.__new__(DatabaseGenerator)
-        
+
         wf_dat = {}  # No turbines here
         system_dat = {"wind_farm": {"turbines": windio_turbine_dict}}
-        
+
         power = gen._infer_rated_power(wf_dat, system_dat)
         assert power == 15.0e6
 
     def test_raises_when_not_found(self):
         """Should raise ValueError when rated power cannot be inferred."""
         gen = DatabaseGenerator.__new__(DatabaseGenerator)
-        
+
         wf_dat = {"turbines": {"hub_height": 100}}  # No power info
         system_dat = {}
-        
+
         try:
             gen._infer_rated_power(wf_dat, system_dat)
             assert False, "Should have raised ValueError"
@@ -176,8 +189,14 @@ class TestGenerateDatabase:
 
         # Mock run_parameter_sweep to return synthetic data
         def fake_run_parameter_sweep(
-            turb_rated_power, dat, param_config, reference_power, 
-            reference_phys, n_samples, seed, output_dir
+            turb_rated_power,
+            dat,
+            param_config,
+            reference_power,
+            reference_phys,
+            n_samples,
+            seed,
+            output_dir,
         ):
             sample = np.arange(n_samples)
             flow_case = np.arange(reference_power.dims["time"])
@@ -187,7 +206,10 @@ class TestGenerateDatabase:
                 data_vars=dict(
                     model_bias_cap=(("sample", "flow_case"), model_bias),
                     pw_power_cap=(("sample", "flow_case"), model_bias + 0.5),
-                    ref_power_cap=(("sample", "flow_case"), np.ones_like(model_bias) * 0.5),
+                    ref_power_cap=(
+                        ("sample", "flow_case"),
+                        np.ones_like(model_bias) * 0.5,
+                    ),
                 ),
                 coords=dict(
                     sample=sample,
@@ -196,7 +218,9 @@ class TestGenerateDatabase:
                 ),
                 attrs=dict(
                     swept_params=["k_b"],
-                    param_paths=["attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b"],
+                    param_paths=[
+                        "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b"
+                    ],
                     param_defaults=json.dumps({"k_b": 0.04}),
                 ),
             )
@@ -210,7 +234,10 @@ class TestGenerateDatabase:
         gen = DatabaseGenerator(
             nsamples=4,
             param_config={
-                "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": [0.01, 0.07]
+                "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": [
+                    0.01,
+                    0.07,
+                ]
             },
             system_yaml_path=system_yaml,
             ref_power_path=ref_power,

@@ -1,6 +1,5 @@
 import yaml
 import os
-import numpy as np
 import xarray as xr
 from pce_utils import (
     build_input_output_arrays,
@@ -62,7 +61,7 @@ def main():
         marginals=[config["marginals"]] * nvar,
         copula=config["copula"],
         degree=config["pce_degree"],
-        q=config["q"]
+        q=config["q"],
     )
 
     PCE_metamodel = pce_result.getMetaModel()
@@ -76,7 +75,7 @@ def main():
         sobol_total,
         varnames,
         save=config["save_plots"],
-        filename=f"plots/sobol_indices.png",
+        filename="plots/sobol_indices.png",
     )
 
     # Optional training evaluation plots
@@ -92,7 +91,7 @@ def main():
             PCE_metamodel=PCE_metamodel,
             save=config["save_plots"],
             plot_options=config["plot_options"],
-            seed=42
+            seed=42,
         )
 
 
