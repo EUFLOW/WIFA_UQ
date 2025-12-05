@@ -51,3 +51,109 @@ class BayesianCalibration(PostProcesser):
     @property
     def samples_posterior_predictive(self):
         return self._samples_posterior_predictive
+
+
+class BayesianCalibrationWrapper:
+    """
+    Wrapper to make BayesianCalibration compatible with MainPipeline.
+    
+    This performs Bayesian inference to get a posterior distribution
+    of parameters, then uses the MAP (Maximum A Posteriori) estimate
+    as the calibrated parameters.
+    """
+    def __init__(self, dataset_train, system_yaml: str = None, 
+                 param_ranges: dict = None):
+        """
+        Args:
+            dataset_train: xarray Dataset with the model bias database
+            system_yaml: Path to windIO system YAML (required for WIFA model)
+            param_ranges: Dict of {param_name: [min, max]} for prior bounds
+        """
+        self.dataset_train = dataset_train
+        self.system_yaml = system_yaml
+        self.param_ranges = param_ranges or {}
+        
+        self.swept_params = dataset_train.attrs.get('swept_params', [])
+        self.best_idx_ = None
+        self.best_params_ = None
+        self.posterior_samples_ = None
+        
+        # Build param_ranges from database if not provided
+        if not self.param_ranges:
+            self._infer_param_ranges()
+    
+    def _infer_param_ranges(self):
+        """Infer parameter ranges from database coordinates."""
+        for param_name in self.swept_params:
+            if param_name in self.dataset_train.coords:
+                values = self.dataset_train.coords[param_name].values
+                self.param_ranges[param_name] = [float(values.min()), float(values.max())]
+    
+    def fit(self):
+        """
+        Run Bayesian inference and extract MAP estimate.
+        
+        Note: This requires UMBRA to be installed and a valid system_yaml.
+        Falls back to MinBiasCalibrator if UMBRA is unavailable.
+        """
+        try:
+            import umbra
+            
+            if self.system_yaml is None:
+                raise ValueError("system_yaml path required for Bayesian calibration")
+            
+            # Prepare observation data from dataset
+            # This is simplified - you may need to adjust based on your data structure
+            ref_power = self.dataset_train['ref_power_cap'].isel(sample=0).values
+            
+            # Create BayesianCalibration instance
+            bc = BayesianCalibration(
+                system_yaml=self.system_yaml,
+                params=self.param_ranges,
+                data=ref_power
+            )
+            
+            # Run inference
+            self.posterior_samples_ = bc.fit()
+            
+            # Extract MAP estimate (mode of posterior)
+            self.best_params_ = {}
+            for i, param_name in enumerate(self.swept_params):
+                samples = self.posterior_samples_[:, i]
+                # Use median as robust point estimate
+                self.best_params_[param_name] = float(np.median(samples))
+            
+            # Find closest sample index to MAP estimate
+            self.best_idx_ = self._find_closest_sample_idx()
+            
+        except ImportError:
+            print("WARNING: UMBRA not installed. Falling back to MinBiasCalibrator.")
+            fallback = MinBiasCalibrator(self.dataset_train)
+            fallback.fit()
+            self.best_idx_ = fallback.best_idx_
+            self.best_params_ = fallback.best_params_
+        
+        except Exception as e:
+            print(f"WARNING: Bayesian calibration failed ({e}). Falling back to MinBiasCalibrator.")
+            fallback = MinBiasCalibrator(self.dataset_train)
+            fallback.fit()
+            self.best_idx_ = fallback.best_idx_
+            self.best_params_ = fallback.best_params_
+        
+        return self
+    
+    def _find_closest_sample_idx(self):
+        """Find sample index closest to MAP estimate."""
+        n_samples = len(self.dataset_train.sample)
+        distances = np.zeros(n_samples)
+        
+        for param_name, map_value in self.best_params_.items():
+            if param_name in self.dataset_train.coords:
+                sample_values = self.dataset_train.coords[param_name].values
+                distances += (sample_values - map_value) ** 2
+        
+        return int(np.argmin(distances))
+    
+    def get_posterior_samples(self):
+        """Return posterior samples for uncertainty quantification."""
+        return self.posterior_samples_

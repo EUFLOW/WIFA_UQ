@@ -265,3 +265,112 @@ def plot_training_quality(calibration_inputs, stochastic_varnames_physical, mode
         if save:
             plt.savefig("plots/training_metrics.png", dpi=150)
         plt.show()
+
+def run_pce_sensitivity(X, y, feature_names, pce_config: dict, output_dir: Path):
+    """
+    PCE-based sensitivity analysis on error.
+    
+    Computes Sobol indices to determine which physical features
+    contribute most to error variance.
+    
+    Args:
+        X: Feature matrix (n_samples, n_features) - physical features only
+           Can be numpy array or pandas DataFrame
+        y: Error values (n_samples,) - observed error or (obs - pred)
+           Use y = observations if you want SA of observations alone
+        feature_names: List of feature names corresponding to X columns
+        pce_config: Dict with PCE settings:
+            - degree (int): Polynomial degree, default 5
+            - marginals (str): 'kernel', 'uniform', or 'normal', default 'kernel'
+            - copula (str): 'independent' or 'normal', default 'independent'
+            - q (float): Hyperbolic truncation parameter, default 1.0
+        output_dir: Path to save plots and CSV output
+        
+    Returns:
+        Dict with:
+            - 'sobol_first': dict mapping feature names to first-order indices
+            - 'sobol_total': dict mapping feature names to total-order indices
+            - 'pce_result': the fitted PCE object (for further analysis if needed)
+            - 'feature_names': list of feature names
+    """
+    import matplotlib.pyplot as plt
+    from pathlib import Path
+    
+    # Convert inputs to numpy arrays if needed
+    if hasattr(X, 'values'):
+        X = X.values
+    if hasattr(y, 'values'):
+        y = y.values
+    
+    # Ensure y is 1D
+    y = np.asarray(y).flatten()
+    
+    # Validate shapes
+    n_samples, n_features = X.shape
+    if len(y) != n_samples:
+        raise ValueError(f"X has {n_samples} samples but y has {len(y)}")
+    if len(feature_names) != n_features:
+        raise ValueError(f"X has {n_features} features but {len(feature_names)} feature names provided")
+    
+    # Extract config with defaults
+    degree = pce_config.get('degree', 5)
+    marginals = pce_config.get('marginals', 'kernel')
+    copula = pce_config.get('copula', 'independent')
+    q = pce_config.get('q', 1.0)
+    
+    print(f"--- Running PCE Sensitivity Analysis ---")
+    print(f"    Samples: {n_samples}, Features: {n_features}")
+    print(f"    Degree: {degree}, Marginals: {marginals}, Copula: {copula}, q: {q}")
+    print(f"    Features: {feature_names}")
+    
+    # Construct PCE metamodel
+    print("    Constructing PCE metamodel...")
+    pce_result = construct_PCE_ot(
+        input_array=X,
+        output_array=y,
+        marginals=[marginals] * n_features,
+        copula=copula,
+        degree=degree,
+        q=q
+    )
+    
+    # Compute Sobol indices
+    print("    Computing Sobol indices...")
+    sobol_first, sobol_total = compute_sobol_indices(pce_result, n_features)
+    
+    # Create results dict
+    results = {
+        'sobol_first': dict(zip(feature_names, sobol_first)),
+        'sobol_total': dict(zip(feature_names, sobol_total)),
+        'pce_result': pce_result,
+        'feature_names': feature_names
+    }
+    
+    # Save outputs
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Plot Sobol indices
+    plot_sobol_indices(
+        sobol_first, sobol_total, feature_names,
+        save=True,
+        filename=str(output_dir / "pce_sobol_indices.png")
+    )
+    print(f"    Saved plot to {output_dir / 'pce_sobol_indices.png'}")
+    
+    # Save as CSV
+    sobol_df = pd.DataFrame({
+        'Feature': feature_names,
+        'First_Order': sobol_first,
+        'Total_Order': sobol_total
+    })
+    sobol_df = sobol_df.sort_values('Total_Order', ascending=False)
+    sobol_df.to_csv(output_dir / "pce_sobol_indices.csv", index=False)
+    print(f"    Saved indices to {output_dir / 'pce_sobol_indices.csv'}")
+    
+    # Print summary
+    print("    Results (sorted by Total Order):")
+    for _, row in sobol_df.iterrows():
+        print(f"        {row['Feature']}: S1={row['First_Order']:.4f}, ST={row['Total_Order']:.4f}")
+    
+    return results

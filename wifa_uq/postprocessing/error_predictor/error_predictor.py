@@ -87,30 +87,6 @@ class SIRPolynomialRegressor(BaseEstimator, RegressorMixin):
 ## ------------------------------------------------------------------ ##
 
 
-class MinBiasCalibrator:
-    def __init__(self, dataset_train):
-        self.dataset_train = dataset_train
-
-    def fit(self):
-        abs_total_bias = np.abs(self.dataset_train['model_bias_cap'].sum(dim='case_index'))
-        idx_ = int(abs_total_bias.argmin().values)
-        parameters=np.round(self.dataset_train.isel(sample=idx_).k_b.values,4)
-        self.best_idx_ = idx_
-        self.best_params_ = parameters
-
-        return self  # same value for all data points (this is sort of redundant)
-
-class DefaultParams:
-    def __init__(self, dataset_train):
-        self.dataset_train = dataset_train
-
-    def fit(self):
-        idx_ = 0  # default parameter is hard-coded upstream as first index
-        parameters = np.round(self.dataset_train.isel(sample=idx_).k_b.values, 4)
-        self.best_idx_ = idx_
-        self.best_params_ = parameters
-        return self
-
 class BiasPredictor:
     """
     Predict bias as a function of features and parameter samples
@@ -128,67 +104,185 @@ class BiasPredictor:
         return y_pred
 
 class MainPipeline:
-    def __init__(self, calibrator, bias_predictor, features_list: list):
+    """
+    Main pipeline that combines calibration and bias prediction.
+    
+    Supports two calibration modes:
+    1. Global calibration (MinBiasCalibrator, DefaultParams):
+       - Single parameter set for all cases
+       - calibrator.best_idx_ gives the sample index
+       
+    2. Local calibration (LocalParameterPredictor):
+       - Different optimal parameters per case
+       - calibrator.get_optimal_indices() gives per-case indices
+    """
+    def __init__(self, calibrator, bias_predictor, features_list: list, 
+                 calibration_mode: str = "global"):
         """
         Args:
-            features_list (list): List of feature names to use for training.
+            calibrator: Calibrator instance (already initialized with dataset_train)
+            bias_predictor: BiasPredictor instance
+            features_list: List of feature names to use for bias prediction
+            calibration_mode: "global" or "local"
         """
         self.calibrator = calibrator
         self.bias_predictor = bias_predictor
         self.features_list = features_list
+        self.calibration_mode = calibration_mode
+        
         if not self.features_list:
             raise ValueError("features_list cannot be empty.")
 
     def fit(self, dataset_train, dataset_test):
+        """
+        Fit the calibrator and bias predictor.
+        
+        Returns:
+            X_test, y_test, idxs (for compatibility with cross-validation)
+        """
         # 1. Fit calibrator
         self.calibrator.fit()
+        
+        if self.calibration_mode == "global":
+            return self._fit_global(dataset_train, dataset_test)
+        elif self.calibration_mode == "local":
+            return self._fit_local(dataset_train, dataset_test)
+        else:
+            raise ValueError(f"Unknown calibration_mode: {self.calibration_mode}")
+    
+    def _fit_global(self, dataset_train, dataset_test):
+        """Fit using global calibration (single parameter set)."""
         idxs = self.calibrator.best_idx_
-        params = self.calibrator.best_params_
-
-        # 2. Prepare training data
+        
+        # Select the calibrated sample for train and test
         dataset_train_cal = dataset_train.sel(sample=idxs)
         dataset_test_cal = dataset_test.sel(sample=idxs)
-
+        
+        # Prepare features
         X_train_df = dataset_train_cal.to_dataframe().reset_index()
         X_test_df = dataset_test_cal.to_dataframe().reset_index()
-
-        # --- NEW FEATURE SELECTION ---
-        # Use *only* the features specified in the list
-        try:
-            X_train = X_train_df[self.features_list]
-            X_test = X_test_df[self.features_list]
-        except KeyError as e:
-            print(f"Error: Feature not found in dataset: {e}")
-            print(f"Available columns: {list(X_train_df.columns)}")
-            raise
+        
+        X_train = self._extract_features(X_train_df)
+        X_test = self._extract_features(X_test_df)
         
         y_train = dataset_train_cal['model_bias_cap'].values
         y_test = dataset_test_cal['model_bias_cap'].values
-
-        # --- FIX: Clean string-like columns before fitting ---
-        for col in X_train.columns:
-            if X_train[col].dtype == 'object':
-                # Check for empty dataframe, common in CV folds
-                if X_train[col].dropna().empty:
-                    continue
-                first_item = X_train[col].dropna().iloc[0]
-                if isinstance(first_item, str):
-                    print(f"    Cleaning string column in FIT: {col}")
-                    X_train[col] = X_train[col].str.replace(r'[\[\]]', '', regex=True).astype(float)
-                    X_test[col] = X_test[col].str.replace(r'[\[\]]', '', regex=True).astype(float)
-                else:
-                    X_train[col] = X_train[col].astype(float)
-                    X_test[col] = X_test[col].astype(float)
         
-        # 3. Fit bias predictor
+        # Fit bias predictor
         self.bias_predictor.fit(X_train, y_train)
-
-        # Store X_test for predict() method
+        
+        # Store for predict()
         self.X_test_ = X_test
         
         return X_test, y_test, idxs
+    
+    def _fit_local(self, dataset_train, dataset_test):
+        """Fit using local calibration (per-case optimal parameters)."""
+        # 1. Get per-case optimal sample indices from the local calibrator
+        train_optimal_indices = self.calibrator.get_optimal_indices()
+        n_train_cases = len(dataset_train.case_index)
+
+        # 2. Build training feature matrix from sample=0
+        #    (features do not depend on sampled parameters)
+        train_base = dataset_train.isel(sample=0)
+        train_df = train_base.to_dataframe().reset_index()
+        X_train = self._extract_features(train_df)
+
+        # 3. Build training targets: bias at the optimal sample for each case
+        y_train = np.zeros(n_train_cases)
+        for case_idx, sample_idx in enumerate(train_optimal_indices):
+            y_train[case_idx] = float(
+                dataset_train["model_bias_cap"]
+                .isel(case_index=case_idx, sample=sample_idx)
+                .values
+            )
+
+        # 4. Test features (also from sample=0)
+        X_test_df = dataset_test.isel(sample=0).to_dataframe().reset_index()
+        X_test_features = self._extract_features(X_test_df)
+
+        # 5. Predict optimal parameters for test cases,
+        #    then find the closest sampled parameter set in the database
+        predicted_params = self.calibrator.predict(X_test_features)
+        test_optimal_indices = self._find_closest_samples(
+            dataset_test, predicted_params
+        )
+
+        # 6. Build test targets: bias at the chosen sample for each test case
+        n_test_cases = len(dataset_test.case_index)
+        y_test = np.zeros(n_test_cases)
+        for case_idx, sample_idx in enumerate(test_optimal_indices):
+            y_test[case_idx] = float(
+                dataset_test["model_bias_cap"]
+                .isel(case_index=case_idx, sample=sample_idx)
+                .values
+            )
+
+        # 7. Fit the bias predictor on per-case data
+        self.bias_predictor.fit(X_train, y_train)
+
+        # Store X_test_ so .predict() can be called without args
+        self.X_test_ = X_test_features
+
+        # Return in the same shape run_cross_validation expects
+        return X_test_features, y_test, test_optimal_indices
+
+    
+    def _extract_features(self, df):
+        """Extract and clean features from dataframe."""
+        try:
+            X = df[self.features_list].copy()
+        except KeyError as e:
+            print(f"Error: Feature not found in dataset: {e}")
+            print(f"Available columns: {list(df.columns)}")
+            raise
+        
+        # Clean string-like columns
+        for col in X.columns:
+            if X[col].dtype == 'object':
+                if X[col].dropna().empty:
+                    continue
+                first_item = X[col].dropna().iloc[0]
+                if isinstance(first_item, str):
+                    X[col] = X[col].str.replace(r'[\[\]]', '', regex=True).astype(float)
+                else:
+                    X[col] = X[col].astype(float)
+        
+        return X
+    
+    def _find_closest_samples(self, dataset, predicted_params):
+        """
+        Find the sample index closest to predicted parameters for each case.
+        
+        Args:
+            dataset: xarray Dataset with 'sample' dimension
+            predicted_params: DataFrame with predicted optimal parameters
+        
+        Returns:
+            Array of sample indices (one per case)
+        """
+        n_cases = len(predicted_params)
+        n_samples = len(dataset.sample)
+        swept_params = self.calibrator.swept_params
+        
+        closest_indices = np.zeros(n_cases, dtype=int)
+        
+        for case_idx in range(n_cases):
+            target_params = predicted_params.iloc[case_idx]
+            
+            # Calculate distance to each sample's parameters
+            distances = np.zeros(n_samples)
+            for param_name in swept_params:
+                if param_name in dataset.coords:
+                    sample_values = dataset.coords[param_name].values
+                    distances += (sample_values - target_params[param_name]) ** 2
+            
+            closest_indices[case_idx] = int(np.argmin(distances))
+        
+        return closest_indices
 
     def predict(self, X=None):
+        """Predict bias for test data."""
         if X is None:
             X = self.X_test_
         return self.bias_predictor.predict(X)
@@ -215,82 +309,127 @@ def compute_metrics(y_true, bias_samples,pw, ref,data_driv=None):
             "pw_bias": pw_bias, "pw_bias_corrected": pw_bias_corrected,
             "data_driv_bias": data_driv_bias}
 
-def run_observation_sensitivity(database, features_list, ml_pipeline, model_type, output_dir):
+def run_observation_sensitivity(database, features_list, ml_pipeline, model_type, 
+                                 output_dir, method: str = "auto", pce_config: dict = None):
     """
-    Trains a model to predict reference power from features
-    and saves feature importance plots (SHAP or SIR).
+    Sensitivity analysis on observations.
+    
+    Args:
+        database: xarray Dataset
+        features_list: List of feature names
+        ml_pipeline: ML pipeline (used for shap/sir methods)
+        model_type: "tree" or "sir" (used for shap/sir methods)
+        output_dir: Where to save plots
+        method: "auto", "shap", "sir", or "pce_sobol"
+                "auto" uses shap for tree models, sir directions for sir models
+        pce_config: Config dict for PCE (only used if method="pce_sobol")
     """
-    print("--- Running Observation Sensitivity ---")
+    print(f"--- Running Observation Sensitivity (method={method}) ---")
     
-    # Select only one sample (e.g., sample=0)
-    db_slice = database.sel(sample=0).to_dataframe().reset_index()
+    # Prepare data (sample 0 = default params)
+    data = database.isel(sample=0).to_dataframe().reset_index()
+    X = data[features_list]
+    y = data['ref_power_cap'].values  # observations
     
-    X = db_slice[features_list]
-    y = db_slice['ref_power_cap']
-    y = y.astype(float)
-
-    X = X.astype(float) # Final cast
-    print('y is ', y)
-
-    # Train a new pipeline on all data
-    model_pipeline = ml_pipeline.fit(X, y)
+    # Determine method
+    if method == "auto":
+        method = "shap" if model_type == "tree" else "sir"
     
-    # --- Model-Aware Sensitivity Logic ---
-    # We check the model type to decide which importance metric to use.
-    if model_type == "tree":
-        print("--- Calculating SHAP (TreeExplainer) ---")
-        xgb_model = model_pipeline.named_steps['model']
-        X_scaled = model_pipeline.named_steps['scaler'].transform(X)
+    if method == "pce_sobol":
+        # PCE-based Sobol indices
+        from wifa_uq.postprocessing.PCE_tool.pce_utils import run_pce_sensitivity
         
-        explainer = shap.TreeExplainer(xgb_model)
-        shap_values_obj = explainer(X_scaled) # This is the Explanation object
-        shap_values = shap_values_obj.values  # This is the raw numpy array
-
-        # --- 1. BAR PLOT (from mean abs shap) ---
-        print("--- Calculating SHAP Global Feature Importance (Mean Absolute Value) ---")
-        mean_abs_shap = np.mean(np.abs(shap_values), axis=0)
-        shap_scores = pd.Series(mean_abs_shap, index=X.columns).sort_values(ascending=True)
-
-        fig, ax = plt.subplots(figsize=(10, 8))
-        shap_scores.plot(kind='barh', ax=ax)
-        ax.set_title('Global SHAP Feature Importance (Mean Absolute SHAP Value)')
-        ax.set_xlabel('Mean |SHAP Value| (Impact on ref_power_cap)')
-        plt.tight_layout()
+        run_pce_sensitivity(
+            X=X.values,
+            y=y,
+            feature_names=features_list,
+            pce_config=pce_config or {},
+            output_dir=output_dir
+        )
+    
+    elif method == "shap":
+        # Train model, then SHAP
+        ml_pipeline.fit(X, y)
         
-        bar_plot_path = output_dir / "observation_shap_importance.png"
-        plt.savefig(bar_plot_path, dpi=150, bbox_inches='tight')
-        plt.close(fig)
-        print(f"Saved SHAP importance bar plot to: {bar_plot_path}")
-        
-        # --- 2. BEESWARM PLOT (from shap object) ---
-        shap.summary_plot(shap_values_obj, X, show=False)
-        plot_path = output_dir / "observation_shap.png"
-        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
-        plt.close()
-        print(f"Saved observation SHAP beeswarm plot to: {plot_path}")
-
-    elif model_type == "sir":
-        print("--- Calculating SIR Feature Importance (Direction Coefficients) ---")
-        # model_pipeline is the SIRPolynomialRegressor instance
-        shap_scores = model_pipeline.get_feature_importance(X.columns)
-        shap_scores = shap_scores.sort_values(ascending=True) # Sort for barh
-
-        # --- 1. BAR PLOT (from SIR directions) ---
-        fig, ax = plt.subplots(figsize=(10, 8))
-        shap_scores.plot(kind='barh', ax=ax)
-        ax.set_title('Global SIR Feature Importance (Absolute Direction Coefficient)')
-        ax.set_xlabel('Mean |SIR Direction Coefficient| (Impact on ref_power_cap)')
-        plt.tight_layout()
-        
-        bar_plot_path = output_dir / "observation_sir_importance.png"
-        plt.savefig(bar_plot_path, dpi=150, bbox_inches='tight')
-        plt.close(fig)
-        print(f"Saved SIR importance bar plot to: {bar_plot_path}")
-        print("--- NOTE: Beeswarm plot is not available for SIR model. ---")
+        if hasattr(ml_pipeline, 'named_steps'):
+            model = ml_pipeline.named_steps['model']
+        else:
+            model = ml_pipeline
+    
+        # Get scaled data and model for SHAP
+        X_scaled = ml_pipeline.named_steps['scaler'].transform(X)
+        model = ml_pipeline.named_steps['model']
             
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(X_scaled)
+        
+        # Plot
+        shap.summary_plot(shap_values, X, feature_names=features_list, show=False)
+        plt.savefig(Path(output_dir) / "observation_sensitivity_shap.png", dpi=150)
+        plt.close()
+        print(f"    Saved SHAP plot to {output_dir}/observation_sensitivity_shap.png")
+    
+    elif method == "sir":
+        # Train SIR model, use direction coefficients
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+        ml_pipeline.fit(X_scaled, y)
+        
+        # Get SIR direction coefficients as importance
+        directions = ml_pipeline.sir_.directions_.flatten()
+        importance = np.abs(directions)
+
+        # Identify the feature with the largest influence on the first direction
+        top_idx = np.argmax(importance)
+        top_feature_name = features_list[top_idx]
+        print(f"    Dominant feature identified: {top_feature_name}")
+        
+        # Plot
+        sorted_idx = np.argsort(importance)
+        plt.figure(figsize=(8, 6))
+        plt.barh(range(len(features_list)), importance[sorted_idx])
+        plt.yticks(range(len(features_list)), [features_list[i] for i in sorted_idx])
+        plt.xlabel("Absolute SIR Direction Coefficient")
+        plt.title("Observation Sensitivity (SIR)")
+        plt.tight_layout()
+        plt.savefig(Path(output_dir) / "observation_sensitivity_sir.png", dpi=150)
+        plt.close()
+        print(f"    Saved SIR plot to {output_dir}/observation_sensitivity_sir.png")
+
+        # 2. Shadow Plot (Error vs. First Eigenvector, Colored by Top Feature)
+        # Project data onto the first found direction
+        X_projected = ml_pipeline.sir_.transform(X_scaled)
+        first_component = X_projected[:, 0]
+        
+        # Get values of the top feature for coloring
+        # X is likely a DataFrame here given the setup code
+        color_values = X.iloc[:, top_idx].values
+
+        plt.figure(figsize=(9, 7))
+        # 
+        scatter = plt.scatter(first_component, y, c=color_values, cmap='viridis', 
+                              alpha=0.7, edgecolor='k', linewidth=0.5)
+        
+        cbar = plt.colorbar(scatter)
+        cbar.set_label(f"Feature Value: {top_feature_name}", rotation=270, labelpad=15)
+        
+        plt.xlabel(r"Projected Input $\beta_1^T \mathbf{x}$ (1st SIR Direction)")
+        plt.ylabel("Observed Error (y)")
+        plt.title(f"SIR Shadow Plot\nColored by dominant feature '{top_feature_name}'")
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        shadow_plot_path = Path(output_dir) / "observation_sensitivity_sir_shadow.png"
+        plt.savefig(shadow_plot_path, dpi=150)
+        plt.close()
+        print(f"    Saved SIR shadow plot to {shadow_plot_path}")
+    
+    else:
+        raise ValueError(f"Unknown method: {method}. Use 'auto', 'shap', 'sir', or 'pce_sobol'")
+
 def run_cross_validation(xr_data, ML_pipeline, model_type, Calibrator_cls, BiasPredictor_cls, 
                          MainPipeline_cls, cv_config: dict, features_list: list,
-                         output_dir: Path, sa_config: dict):
+                         output_dir: Path, sa_config: dict, calibration_mode: str = "global"):
     
     validation_data = xr_data[['turb_rated_power', 'pw_power_cap', 'ref_power_cap', 'case_index']]
     groups = xr_data['wind_farm'].values
@@ -298,32 +437,27 @@ def run_cross_validation(xr_data, ML_pipeline, model_type, Calibrator_cls, BiasP
     splitting_mode = cv_config.get('splitting_mode', 'kfold_shuffled')
     
     if splitting_mode == 'LeaveOneGroupOut':
-        # Hardcoded groups (as in your original)
-        # This part is still brittle, but we can make it work
-        wf_to_group = {
-            "HR1": 0, "HR2": 0, "HR3":0,
-            "NYSTED1":1, "NYSTED2":1,
-            "VirtWF_ABL_IEA10":2,  
-            "VirtWF_ABL_IEA15_ali_DX5_DY5":3,   
-            "VirtWF_ABL_IEA15_stag_DX5_DY5":4, "VirtWF_ABL_IEA15_stag_DX5_DY7p5":4, "VirtWF_ABL_IEA15_stag_DX7p5_DY5":4,  
-            "VirtWF_ABL_IEA22":5,
-            "KUL_LES": 6 # Add KUL_LES to a new group
-        }
-        # Map groups, assigning a default group (e.g., 99) if not found
-        default_group = max(wf_to_group.values()) + 1 if wf_to_group else 0
-        manual_groups = np.array([wf_to_group.get(w, default_group) for w in groups])
-        
-        if len(np.unique(manual_groups)) < 2:
-            print("Warning: Only one unique group found. "
-                  "Falling back to KFold with 5 splits.")
-            splitting_mode = 'kfold_shuffled'
-            n_splits = 5
-        else:
-            cv = LeaveOneGroupOut()
-            splits = cv.split(xr_data.case_index, groups=manual_groups)
-            n_splits = cv.get_n_splits(groups=manual_groups) # Get actual number of splits
-            print(f"Using LeaveOneGroupOut with {n_splits} groups.")
+        groups = xr_data['wind_farm'].values
     
+        groups_cfg = cv_config.get("groups")
+        if groups_cfg:
+            # Flatten config into a name -> label mapping
+            wf_to_group = {}
+            for group_label, wf_list in groups_cfg.items():
+                for wf in wf_list:
+                    wf_to_group[wf] = group_label   # can stay as string!
+    
+            default_group = "__OTHER__"
+            manual_groups = np.array([wf_to_group.get(str(w), default_group) for w in groups])
+        else:
+            # Fully generic fallback: each wind_farm is its own group
+            manual_groups = groups
+    
+        cv = LeaveOneGroupOut()
+        splits = cv.split(xr_data.case_index, groups=manual_groups)
+        n_splits = cv.get_n_splits(groups=manual_groups)
+        print(f"Using LeaveOneGroupOut with {n_splits} groups.")
+
     if splitting_mode == 'kfold_shuffled':
         n_splits = cv_config.get('n_splits', 5)
         cv = KFold(n_splits=n_splits, shuffle=True, random_state=42)
@@ -345,11 +479,16 @@ def run_cross_validation(xr_data, ML_pipeline, model_type, Calibrator_cls, BiasP
         dataset_train = xr_data.where(xr_data.case_index.isin(train_indices), drop=True)
         dataset_test = xr_data.where(xr_data.case_index.isin(test_indices), drop=True)
         
-        calibrator = Calibrator_cls(dataset_train)
+
+        if calibration_mode == "local":
+            calibrator = Calibrator_cls(dataset_train, feature_names=features_list)
+        else:
+            calibrator = Calibrator_cls(dataset_train)
+        
         bias_pred = BiasPredictor_cls(ML_pipeline)
         
         # --- Pass features_list to MainPipeline ---
-        main_pipe = MainPipeline_cls(calibrator, bias_pred, features_list=features_list)
+        main_pipe = MainPipeline_cls(calibrator, bias_pred, features_list=features_list, calibration_mode=calibration_mode)
         
         x_test, y_test, idxs = main_pipe.fit(dataset_train, dataset_test)
         y_pred = main_pipe.predict(x_test)
@@ -359,22 +498,61 @@ def run_cross_validation(xr_data, ML_pipeline, model_type, Calibrator_cls, BiasP
             validation_data.case_index.isin(test_indices), drop=True
         )
         
-        pw = val_data_fold['pw_power_cap'].values
-        ref = val_data_fold['ref_power_cap'].values
+        if calibration_mode == "global":
+            # Single sample index for all cases
+            val_data_fold = validation_data.sel(sample=idxs).where(
+                validation_data.case_index.isin(test_indices), drop=True
+            )
+            
+            pw = val_data_fold["pw_power_cap"].values
+            ref = val_data_fold["ref_power_cap"].values
+        else:
+
+            # Local calibration: idxs is an array of per-case sample indices
+            # We must build pw/ref per test case using those indices.
+            idxs = np.asarray(idxs)
+            if idxs.shape[0] != len(test_indices):
+                raise ValueError(
+                    f"Local calibration returned {idxs.shape[0]} indices, "
+                    f"but there are {len(test_indices)} test cases."
+                )
+
+            pw_list = []
+            ref_list = []
+
+            # dataset_test.case_index is the subset used inside MainPipeline
+            local_case_indices = dataset_test.case_index.values
+
+            for local_case_idx, sample_idx in enumerate(idxs):
+                case_index_val = local_case_indices[local_case_idx]
+
+                # Pick the appropriate sample & case_index from validation_data
+                this_point = validation_data.sel(
+                    sample=int(sample_idx),
+                    case_index=case_index_val
+                )
+
+                pw_list.append(float(this_point["pw_power_cap"].values))
+                ref_list.append(float(this_point["ref_power_cap"].values))
+
+            pw = np.array(pw_list)
+            ref = np.array(ref_list)
+
 
         stats = compute_metrics(y_test, y_pred, pw=pw, ref=ref)
         stats_cv.append(stats)
-        
+
         y_preds.append(y_pred)
         y_tests.append(y_test)
-        pw_all.append(pw)    # <-- Collect pw
-        ref_all.append(ref)  # <-- Collect ref
-        
-        # --- Store model and data for SHAP ---
-        all_models.append(main_pipe.bias_predictor.pipeline) # This is either the XGB-Pipeline or the SIR-Regressor
+        pw_all.append(pw)
+        ref_all.append(ref)
+
+        # --- Store model and data for SHAP / SIR global importance ---
+        all_models.append(main_pipe.bias_predictor.pipeline)
         all_features_df.append(x_test)
         if model_type == "tree":
-            all_xtest_scaled.append(main_pipe.bias_predictor.pipeline.named_steps['scaler'].transform(x_test))
+            X_test_scaled = main_pipe.bias_predictor.pipeline.named_steps['scaler'].transform(x_test)
+            all_xtest_scaled.append(X_test_scaled)
 
 
     cv_results = pd.DataFrame(stats_cv)
@@ -384,9 +562,13 @@ def run_cross_validation(xr_data, ML_pipeline, model_type, Calibrator_cls, BiasP
     # Flatten all fold results into single arrays for plotting
     y_preds_flat = np.concatenate(y_preds)
     y_tests_flat = np.concatenate(y_tests)
-    pw_flat = np.concatenate(pw_all)
-    ref_flat = np.concatenate(ref_all)
-    corrected_power_flat = pw_flat - y_preds_flat # Note: Bias is (Model - Ref), so Corrected = Model - Bias
+
+    have_power = all(p is not None for p in pw_all) and all(r is not None for r in ref_all)
+    
+    if have_power:
+        pw_flat = np.concatenate(pw_all)
+        ref_flat = np.concatenate(ref_all)
+        corrected_power_flat = pw_flat - y_preds_flat
 
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
     fig.suptitle('Cross-Validation Model Performance', fontsize=16)
