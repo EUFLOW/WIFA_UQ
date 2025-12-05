@@ -1,59 +1,30 @@
-# ---------------------------------------------------------------------
-# devcat configuration – tailored for "LLM project context" extraction
-# ---------------------------------------------------------------------
-
-# --------------------------
-# 1. Global exclude patterns
-# --------------------------
 exclude = [
-    # Hidden directories
-    ".*",
-    "!./.devcatrc",      # allow devcat config
-
-    # Large ML artifacts
-    "*.pt", "*.h5", "*.ckpt", "*.trt",
-    "*.pkl", "*.npz", "*.npy", "*.nc", "*.dat",
-
-    # Image/video/binary files
-    "*.jpg", "*.jpeg", "*.png", "*.gif", "*.mp4", "*.pdf", "*.zip",
-
-    # Notebooks
-    "*.ipynb",
-
-    # Data files
-    "*.csv", "*.geojson", "*.json", "*.grd",
-
-    # Python cache
-    "__pycache__/", "*.pyc",
-
-    # Experiment dirs
-    "wandb/",
-
-    # Model datasets (your original function excluded GTSRB*)
-    "GTSRB*",
-
-    # pixi metadata
+    "examples/data",
+    "examples/data/**",
+    "*.pt",
+    "*.h5",
+    "*.ckpt",
+    "*.trt",
+    "*.pkl",
+    "*.npz",
+    "*.npy",
+    "*.nc",
+    "*.dat",
+    "*.jpg",
+    "*.jpeg",
+    "*.png",
+    "*.gif",
+    "*.mp4",
+    "*.pdf",
+    "*.zip",
     "pixi.lock",
+    "*.ipynb",
+    "*.csv",
+    "*.geojson",
+    "*.json",
+    "*.grd",
+    "__pycache__/",
+    "*.pyc",
+    "wandb/",
+    "GTSRB*"
 ]
-
-# ----------------------------------------
-# 2. Ensure file headers like "=== path ==="
-# ----------------------------------------
-header = "=== {path} ==="
-
-# ----------------------------------------------------
-# 3. Only include text files (devcat already does this,
-#    but this keeps behaviour strict + predictable)
-# ----------------------------------------------------
-only_text = true
-
-# ----------------------------------------------------
-# 4. Optional: depth-based grouping of files in output
-# ----------------------------------------------------
-group_by_directory = true
-
-# ----------------------------------------------------
-# 5. Recommended: ignore files listed in .gitignore too
-# ----------------------------------------------------
-use_gitignore = true
-

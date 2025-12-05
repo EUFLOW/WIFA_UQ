@@ -100,5 +100,5 @@ dev = { features = ["dev"], solve-group = "default" }
 test = { features = ["test"], solve-group = "default" }
 
 [tool.pixi.tasks]
-install-devcat = "cargo install devcat"     # installs into the pixi cargo bin dir
+install-devcat = "cargo install --git https://github.com/kilojoules/devcat"
 
