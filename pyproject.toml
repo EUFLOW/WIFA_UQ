@@ -89,6 +89,7 @@ llvmlite = ">=0.45.1,<0.46"
 numba = ">=0.62.1,<0.63"
 numpy = "*"
 openturns = ">=1.26,<2"
+pytest = ">=9.0.1,<10"
 
 [tool.pixi.pypi-dependencies]
 wifa_uq = { path = ".", editable = true }
@@ -99,3 +100,5 @@ dev = { features = ["dev"], solve-group = "default" }
 test = { features = ["test"], solve-group = "default" }
 
 [tool.pixi.tasks]
+install-devcat = "cargo install devcat"     # installs into the pixi cargo bin dir
+
