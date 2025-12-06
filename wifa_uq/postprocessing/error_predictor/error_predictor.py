@@ -611,6 +611,11 @@ def run_cross_validation(
     all_xtest_scaled = []  # Only used for tree models
     all_features_df = []
 
+    # --- Add lists for local calibration parameter prediction tracking ---
+    all_predicted_params = []  # Predicted parameter values per fold
+    all_actual_optimal_params = []  # Actual optimal parameter values per fold
+    swept_params = xr_data.attrs.get("swept_params", [])
+
     for i, (train_idx_locs, test_idx_locs) in enumerate(splits):
         # Get the actual case_index *values* at these integer locations
         train_indices = xr_data.case_index.values[train_idx_locs]
@@ -653,12 +658,37 @@ def run_cross_validation(
         else:
             # Local calibration: idxs is an array of per-case sample indices
             # We must build pw/ref per test case using those indices.
+
+            # Local calibration: idxs is an array of per-case sample indices
+            # We must build pw/ref per test case using those indices.
             idxs = np.asarray(idxs)
             if idxs.shape[0] != len(test_indices):
                 raise ValueError(
                     f"Local calibration returned {idxs.shape[0]} indices, "
                     f"but there are {len(test_indices)} test cases."
                 )
+
+            # --- Track predicted vs actual optimal parameters for this fold ---
+            X_test_features = main_pipe._extract_features(
+                dataset_test.isel(sample=0).to_dataframe().reset_index()
+            )
+            predicted_params_fold = main_pipe.calibrator.predict(X_test_features)
+            all_predicted_params.append(predicted_params_fold)
+
+            # Get actual optimal parameters (from the sample indices we chose)
+            actual_params_fold = {p: [] for p in swept_params}
+            for sample_idx in idxs:
+                for param_name in swept_params:
+                    if param_name in dataset_test.coords:
+                        actual_params_fold[param_name].append(
+                            float(
+                                dataset_test.coords[param_name]
+                                .isel(sample=sample_idx)
+                                .values
+                            )
+                        )
+            actual_params_df = pd.DataFrame(actual_params_fold)
+            all_actual_optimal_params.append(actual_params_df)
 
             pw_list = []
             ref_list = []
@@ -756,6 +786,51 @@ def run_cross_validation(
     plt.savefig(plot_path, dpi=150)
     print(f"Saved correction plot to: {plot_path}")
     plt.close(fig)  # Close the figure
+
+    # --- PARAMETER PREDICTION PLOT (Local Calibration Only) ---
+    if calibration_mode == "local" and all_predicted_params and swept_params:
+        print("--- Generating Parameter Prediction Quality Plot ---")
+
+        # Concatenate all folds
+        predicted_all = pd.concat(all_predicted_params, axis=0, ignore_index=True)
+        actual_all = pd.concat(all_actual_optimal_params, axis=0, ignore_index=True)
+
+        n_params = len(swept_params)
+        fig, axes = plt.subplots(1, n_params, figsize=(6 * n_params, 5))
+        if n_params == 1:
+            axes = [axes]
+
+        fig.suptitle("Local Calibration: Parameter Prediction Quality", fontsize=14)
+
+        for idx, param_name in enumerate(swept_params):
+            ax = axes[idx]
+            pred_vals = predicted_all[param_name].values
+            actual_vals = actual_all[param_name].values
+
+            ax.scatter(actual_vals, pred_vals, alpha=0.5, s=15)
+
+            # 1:1 line
+            min_val = min(actual_vals.min(), pred_vals.min())
+            max_val = max(actual_vals.max(), pred_vals.max())
+            ax.plot([min_val, max_val], [min_val, max_val], "r--", label="1:1 Line")
+
+            # Calculate R² for parameter prediction
+            ss_res = np.sum((actual_vals - pred_vals) ** 2)
+            ss_tot = np.sum((actual_vals - actual_vals.mean()) ** 2)
+            r2_param = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+
+            ax.set_xlabel(f"Actual Optimal {param_name}")
+            ax.set_ylabel(f"Predicted {param_name}")
+            ax.set_title(f"{param_name} (R² = {r2_param:.3f})")
+            ax.legend()
+            ax.grid(True)
+            ax.set_aspect("equal", adjustable="box")
+
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        param_plot_path = output_dir / "local_parameter_prediction.png"
+        plt.savefig(param_plot_path, dpi=150)
+        print(f"Saved parameter prediction plot to: {param_plot_path}")
+        plt.close(fig)
 
     # --- END PLOTTING BLOCK ---
 

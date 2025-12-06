@@ -49,7 +49,7 @@ error_prediction:
     q: 0.5                     # hyperbolic truncation parameter
     max_features: 5            # safety limit
     allow_high_dim: false      # refuse > 5 inputs unless set true
-  calibrator: MinBiasCalibrator
+  calibrator: LocalParameterPredictor
   bias_predictor: BiasPredictor
   cross_validation:
     run: true
