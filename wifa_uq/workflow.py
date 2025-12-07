@@ -6,6 +6,7 @@ from sklearn.preprocessing import StandardScaler
 import xgboost as xgb
 import numpy as np
 
+from wifa_uq.model_error_database.multi_farm_gen import generate_multi_farm_database
 from wifa_uq.preprocessing.preprocessing import PreprocessingInputs
 from wifa_uq.postprocessing.error_predictor.error_predictor import PCERegressor
 from wifa_uq.model_error_database.database_gen import DatabaseGenerator
@@ -62,6 +63,19 @@ def build_predictor_pipeline(model_name: str, model_params: dict | None = None):
     """
     if model_params is None:
         model_params = {}
+
+    if model_name == "Linear":
+        from wifa_uq.postprocessing.error_predictor.error_predictor import (
+            LinearRegressor,
+        )
+
+        print(
+            f"Building Linear Regressor (method={model_params.get('method', 'ols')})..."
+        )
+        pipeline = LinearRegressor(**model_params)
+        model_type = "linear"
+        return pipeline, model_type
+
     if model_name == "XGB":
         print("Building XGBoost Regressor pipeline...")
         pipeline = Pipeline(
@@ -95,16 +109,97 @@ def build_predictor_pipeline(model_name: str, model_params: dict | None = None):
     return pipeline, model_type
 
 
+def _is_multi_farm_config(config: dict) -> bool:
+    """Check if config specifies multiple farms."""
+    return "farms" in config.get("paths", {}) or "farms" in config
+
+
+def _validate_farm_configs(farms: list[dict]) -> None:
+    """
+    Validate farm configurations.
+
+    Each farm must have:
+      - name: Unique identifier for cross-validation grouping
+      - system_config: Path to wind energy system YAML
+    """
+    required_keys = {"name", "system_config"}
+    names_seen = set()
+
+    for i, farm in enumerate(farms):
+        # Check required keys
+        missing = required_keys - set(farm.keys())
+        if missing:
+            raise ValueError(
+                f"Farm #{i+1} is missing required keys: {missing}. "
+                f"Each farm must have 'name' and 'system_config'."
+            )
+
+        # Check for duplicate names
+        name = farm["name"]
+        if name in names_seen:
+            raise ValueError(
+                f"Duplicate farm name: '{name}'. Each farm must have a unique name."
+            )
+        names_seen.add(name)
+
+    print(f"Validated {len(farms)} farm configurations")
+
+
+def _resolve_farm_paths(farm_config: dict, base_dir: Path) -> dict:
+    """
+    Resolve relative paths in a farm config to absolute paths.
+
+    Required keys:
+      - name: Farm identifier (passed through as-is)
+      - system_config: Path to wind energy system YAML
+
+    Optional keys (for explicit path overrides):
+      - reference_power: Path to reference power NetCDF
+      - reference_resource: Path to reference resource NetCDF
+      - wind_farm_layout: Path to wind farm layout YAML
+    """
+    resolved = {"name": farm_config["name"]}
+
+    path_keys = [
+        "system_config",
+        "reference_power",
+        "reference_resource",
+        "wind_farm_layout",
+    ]
+
+    for key in path_keys:
+        if key in farm_config:
+            resolved[key] = base_dir / farm_config[key]
+
+    return resolved
+
+
 def run_workflow(config_path: str | Path):
     """
     Runs the full WIFA-UQ workflow from a configuration file.
+
+    Supports both single-farm and multi-farm configurations.
     """
     config_path = Path(config_path).resolve()
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
-    # --- 0. Resolve Paths ---
     base_dir = config_path.parent
+
+    # Detect single vs multi-farm mode
+    is_multi_farm = _is_multi_farm_config(config)
+
+    if is_multi_farm:
+        return _run_multi_farm_workflow(config, base_dir)
+    else:
+        return _run_single_farm_workflow(config, base_dir)
+
+
+def _run_single_farm_workflow(config: dict, base_dir: Path):
+    """
+    Original single-farm workflow (existing implementation).
+    """
+    # --- 0. Resolve Paths ---
     paths_config = config["paths"]
     system_yaml_path = base_dir / paths_config["system_config"]
     ref_power_path = base_dir / paths_config["reference_power"]
@@ -117,6 +212,7 @@ def run_workflow(config_path: str | Path):
     database_path = output_dir / paths_config["database_file"]
 
     print(f"Resolved output directory: {output_dir}")
+    print("Running in SINGLE-FARM mode")
 
     # === 1. PREPROCESSING STEP ===
     if config["preprocessing"]["run"]:
@@ -155,7 +251,6 @@ def run_workflow(config_path: str | Path):
         database = db_generator.generate_database()
         print("Database generation complete.")
     else:
-        # ... (same as before) ...
         print("--- Loading Existing Database (as per config) ---")
         if not database_path.exists():
             raise FileNotFoundError(
@@ -165,18 +260,87 @@ def run_workflow(config_path: str | Path):
         database = xr.load_dataset(database_path)
         print(f"Database loaded from {database_path}")
 
-    # --- 3. SENSITIVITY ANALYSIS (ON OBSERVATIONS) ---
-    print(f"Database loaded from {database_path}")
+    # Continue with error prediction...
+    return _run_error_prediction(config, database, output_dir)
 
-    # --- 3. SENSITIVITY ANALYSIS (ON OBSERVATIONS) ---
+
+def _run_multi_farm_workflow(config: dict, base_dir: Path):
+    """
+    Multi-farm workflow - processes multiple farms and combines results.
+    """
+    paths_config = config.get("paths", {})
+
+    # Get farm configurations
+    farms_config = config.get("farms") or paths_config.get("farms")
+    if not farms_config:
+        raise ValueError("Multi-farm config requires 'farms' list")
+
+    # Validate farm configs
+    _validate_farm_configs(farms_config)
+
+    # Resolve output directory
+    output_dir = base_dir / paths_config.get("output_dir", "multi_farm_results")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    database_filename = paths_config.get("database_file", "results_stacked_hh.nc")
+    database_path = output_dir / database_filename
+
+    print(f"Resolved output directory: {output_dir}")
+    print(f"Running in MULTI-FARM mode with {len(farms_config)} farms")
+
+    # Resolve paths for each farm
+    resolved_farms = [_resolve_farm_paths(farm, base_dir) for farm in farms_config]
+
+    # Print farm summary
+    print("\nFarms to process:")
+    for farm in resolved_farms:
+        print(f"  - {farm['name']}: {farm['system_config']}")
+
+    # === DATABASE GENERATION ===
+    if config["database_gen"]["run"]:
+        print("\n--- Running Multi-Farm Database Generation ---")
+
+        database = generate_multi_farm_database(
+            farm_configs=resolved_farms,
+            param_config=config["database_gen"]["param_config"],
+            n_samples=config["database_gen"]["n_samples"],
+            output_dir=output_dir,
+            database_file=database_filename,
+            model=config["database_gen"]["flow_model"],
+            preprocessing_steps=config["preprocessing"].get("steps", []),
+            run_preprocessing=config["preprocessing"].get("run", True),
+        )
+
+        print("Multi-farm database generation complete.")
+    else:
+        print("--- Loading Existing Database ---")
+        if not database_path.exists():
+            raise FileNotFoundError(
+                f"Database file not found at {database_path}. "
+                "Set 'database_gen.run = true' to generate it."
+            )
+        database = xr.load_dataset(database_path)
+        print(f"Database loaded from {database_path}")
+        print(f"Contains {len(np.unique(database.wind_farm.values))} farms")
+
+    # Continue with error prediction...
+    return _run_error_prediction(config, database, output_dir)
+
+
+def _run_error_prediction(config: dict, database: xr.Dataset, output_dir: Path):
+    """
+    Run error prediction and sensitivity analysis.
+
+    Shared between single-farm and multi-farm workflows.
+    """
     sa_config = config.get("sensitivity_analysis", {})
-    err_config = config["error_prediction"]  ## NEW ##
-    model_name = err_config.get("model", "XGB")  ## NEW ##
+    err_config = config["error_prediction"]
+    model_name = err_config.get("model", "XGB")
     model_params = err_config.get("model_params", {})
 
+    # --- OBSERVATION SENSITIVITY ---
     if sa_config.get("run_observation_sensitivity", False):
         print(f"--- Running Observation Sensitivity for model: {model_name} ---")
-        # Build a fresh pipeline just for this
         obs_pipeline, obs_model_type = build_predictor_pipeline(
             model_name, model_params
         )
@@ -193,11 +357,10 @@ def run_workflow(config_path: str | Path):
     else:
         print("--- Skipping Observation Sensitivity (as per config) ---")
 
-    # === 4. ERROR PREDICTION / UQ STEP ===
-    if err_config["run"]:  ## MODIFIED ##
+    # === ERROR PREDICTION / UQ STEP ===
+    if err_config["run"]:
         print("--- Running Error Prediction ---")
 
-        # Get the predictor pipeline and its type
         ml_pipeline, model_type = build_predictor_pipeline(model_name, model_params)
 
         calibrator_name = err_config["calibrator"]
@@ -214,7 +377,7 @@ def run_workflow(config_path: str | Path):
         cv_df, y_preds, y_tests = run_cross_validation(
             xr_data=database,
             ML_pipeline=ml_pipeline,
-            model_type=model_type,  ## NEW ##
+            model_type=model_type,
             Calibrator_cls=Calibrator_cls,
             BiasPredictor_cls=Predictor_cls,
             MainPipeline_cls=MainPipeline_cls,
@@ -223,9 +386,9 @@ def run_workflow(config_path: str | Path):
             output_dir=output_dir,
             sa_config=sa_config,
             calibration_mode=calibration_mode,
+            local_regressor=err_config.get("local_regressor"),
+            local_regressor_params=err_config.get("local_regressor_params", {}),
         )
-
-        print("--- Cross-Validation Results (mean) ---")
 
         print("--- Cross-Validation Results (mean) ---")
         print(cv_df.mean())
@@ -239,6 +402,8 @@ def run_workflow(config_path: str | Path):
         )
         print(f"Results saved to {output_dir}")
 
-    print("--- Workflow complete ---")
+        print("--- Workflow complete ---")
+        return cv_df, y_preds, y_tests
 
-    return cv_df, y_preds, y_tests
+    print("--- Workflow complete (no error prediction) ---")
+    return None, None, None

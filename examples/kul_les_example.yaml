@@ -28,10 +28,10 @@ database_gen:
       range: [0.01, 0.07]
       default: 0.04           # ← Default value for baseline comparison
       short_name: "k_b"       # ← Name used in database coordinates
-    attributes.analysis.blockage_model.ss_alpha:
-      range: [0.75, 1.0]
-      default: 0.875
-      short_name: "ss_alpha"
+    attributes.analysis.wind_deficit_model.ceps:
+      range: [0.15, 0.3]
+      default: 0.2154  # PyWake default for BastankhahGaussianDeficit
+      short_name: "ceps"
   n_samples: 100
 
 # --- Error Prediction ---
@@ -50,6 +50,9 @@ error_prediction:
     max_features: 5            # safety limit
     allow_high_dim: false      # refuse > 5 inputs unless set true
   calibrator: LocalParameterPredictor
+  local_regressor: "Ridge"  # Options: RandomForest, Linear, Ridge, Lasso, ElasticNet, XGB
+  local_regressor_params:
+    alpha: 1.0
   bias_predictor: BiasPredictor
   cross_validation:
     run: true

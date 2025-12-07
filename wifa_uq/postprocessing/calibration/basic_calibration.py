@@ -5,6 +5,8 @@ import pandas as pd
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.base import clone
+import xgboost as xgb
+from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
 
 
 class DefaultParams:
@@ -109,7 +111,14 @@ class LocalParameterPredictor:
     - get_optimal_indices() returns per-case optimal sample indices for training data
     """
 
-    def __init__(self, dataset_train, feature_names, regressor=None):
+    def __init__(
+        self,
+        dataset_train,
+        feature_names,
+        regressor=None,
+        regressor_name=None,
+        regressor_params=None,
+    ):
         self.dataset_train = dataset_train
         self.feature_names = feature_names
         self.swept_params = dataset_train.attrs.get("swept_params", [])
@@ -117,8 +126,12 @@ class LocalParameterPredictor:
         if not self.swept_params:
             self.swept_params = self._infer_swept_params()
 
-        # Default to RandomForest if no regressor provided
-        if regressor is None:
+        # Build regressor from name/params if provided, otherwise use passed regressor or default
+        if regressor_name is not None:
+            base_regressor = self._build_regressor(
+                regressor_name, regressor_params or {}
+            )
+        elif regressor is None:
             base_regressor = RandomForestRegressor(n_estimators=100, random_state=42)
         else:
             base_regressor = regressor
@@ -141,6 +154,28 @@ class LocalParameterPredictor:
             if "sample" in coord.dims and coord_name != "sample":
                 swept.append(coord_name)
         return swept
+
+    def _build_regressor(self, name: str, params: dict):
+        """Build a regressor from name and params."""
+
+        if name == "RandomForest":
+            return RandomForestRegressor(
+                **params, random_state=params.get("random_state", 42)
+            )
+        elif name == "Linear":
+            return LinearRegression()
+        elif name == "Ridge":
+            return Ridge(alpha=params.get("alpha", 1.0))
+        elif name == "Lasso":
+            return Lasso(alpha=params.get("alpha", 1.0))
+        elif name == "ElasticNet":
+            return ElasticNet(
+                alpha=params.get("alpha", 1.0), l1_ratio=params.get("l1_ratio", 0.5)
+            )
+        elif name == "XGB":
+            return xgb.XGBRegressor(**params)
+        else:
+            raise ValueError(f"Unknown regressor '{name}' for LocalParameterPredictor.")
 
     def fit(self):
         """

@@ -26,6 +26,5 @@ attributes:
     #
 
 
-output:
-
+simulation_output:
   turbine_data: !include turbine_data.nc

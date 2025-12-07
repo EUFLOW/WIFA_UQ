@@ -8,6 +8,7 @@ These fixtures provide windIO-compliant test data structures.
 import pytest
 import numpy as np
 import xarray as xr
+import yaml
 
 
 @pytest.fixture
@@ -246,3 +247,75 @@ def pywake_param_config():
             "short_name": "ss_alpha",
         },
     }
+
+
+@pytest.fixture
+def multi_farm_configs(windio_system_dict, windio_wind_farm_dict, tmp_path):
+    """
+    Create config dicts for multiple test farms.
+    """
+    farms = []
+
+    for i, farm_name in enumerate(["FarmA", "FarmB", "FarmC"]):
+        farm_dir = tmp_path / farm_name
+        farm_dir.mkdir(parents=True, exist_ok=True)
+
+        # Modify wind farm dict with unique name
+        wf_dict = windio_wind_farm_dict.copy()
+        wf_dict["name"] = farm_name
+
+        # Modify system dict
+        sys_dict = windio_system_dict.copy()
+        sys_dict["name"] = f"{farm_name}_System"
+        sys_dict["wind_farm"] = wf_dict
+
+        # Write YAML files
+        system_yaml = farm_dir / "system.yaml"
+        wf_yaml = farm_dir / "wind_farm.yaml"
+
+        with open(system_yaml, "w") as f:
+            yaml.dump(sys_dict, f)
+        with open(wf_yaml, "w") as f:
+            yaml.dump(wf_dict, f)
+
+        # Create reference power dataset
+        n_turbines = 3
+        n_times = 5 + i  # Different sizes to test combining
+        ref_power = xr.Dataset(
+            data_vars=dict(
+                power=(
+                    ("turbine", "time"),
+                    np.ones((n_turbines, n_times)) * (1.0 + i * 0.1) * 1e6,
+                ),
+            ),
+            coords=dict(turbine=np.arange(n_turbines), time=np.arange(n_times)),
+        )
+        ref_power_path = farm_dir / "ref_power.nc"
+        ref_power.to_netcdf(ref_power_path)
+
+        # Create reference resource dataset
+        ref_resource = xr.Dataset(
+            data_vars=dict(
+                wind_speed=(("time", "height"), np.ones((n_times, 3)) * (8.0 + i)),
+                wind_direction=(("time",), np.full(n_times, 270.0 + i * 10)),
+                potential_temperature=(
+                    ("time", "height"),
+                    np.ones((n_times, 3)) * 280.0,
+                ),
+            ),
+            coords=dict(time=np.arange(n_times), height=[10.0, 100.0, 200.0]),
+        )
+        ref_resource_path = farm_dir / "resource.nc"
+        ref_resource.to_netcdf(ref_resource_path)
+
+        farms.append(
+            {
+                "name": farm_name,
+                "system_config": system_yaml,
+                "reference_power": ref_power_path,
+                "reference_resource": ref_resource_path,
+                "wind_farm_layout": wf_yaml,
+            }
+        )
+
+    return farms

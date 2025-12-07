@@ -23,6 +23,51 @@ The examples folder contains implementations of bayesian calibration and model c
 
 - utils.py contains functions for calculating additional features in the model bias database (i.e., blockage metrics etc.)
 
+## Multi-Farm Workflows
+
+WIFA-UQ supports generating combined databases from multiple wind farms for
+cross-validation studies.
+
+### Configuration
+
+Use the `farms` key in your config to specify multiple wind farms:
+```yaml
+paths:
+  output_dir: combined_results/
+  database_file: results_stacked_hh.nc
+
+farms:
+  - name: Farm1
+    system_config: path/to/farm1/system.yaml
+    reference_power: path/to/farm1/power.nc
+    reference_resource: path/to/farm1/resource.nc
+    wind_farm_layout: path/to/farm1/layout.yaml
+  - name: Farm2
+    system_config: path/to/farm2/system.yaml
+    # ...
+
+database_gen:
+  run: true
+  # ... same as single-farm config
+
+error_prediction:
+  cross_validation:
+    splitting_mode: LeaveOneGroupOut
+    groups:
+      Group1:
+        - Farm1
+        - Farm2
+      Group2:
+        - Farm3
+```
+
+### How It Works
+
+1. Each farm is processed independently (preprocessing + database generation)
+2. Individual farm databases are combined into a single dataset
+3. The `wind_farm` coordinate preserves farm identity
+4. Cross-validation can use `LeaveOneGroupOut` to test generalization across farms
+
 ### preprocessing
 the preprocessing.py scripts carries out several steps such as interpolating the height dimension such that all cases are the same, and recalculating atmospheric input parameters from the vertical profile of potential temperature. These are based on the requirements of the datasets used so far. Further steps may be required for future datasets.
 

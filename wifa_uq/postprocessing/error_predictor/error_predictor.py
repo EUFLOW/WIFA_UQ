@@ -105,6 +105,52 @@ class PCERegressor(BaseEstimator, RegressorMixin):
         return preds
 
 
+class LinearRegressor(BaseEstimator, RegressorMixin):
+    """
+    A simple linear regression wrapper with optional regularization.
+
+    Supports: 'ols' (ordinary least squares), 'ridge', 'lasso', 'elasticnet'
+    """
+
+    def __init__(self, method="ols", alpha=1.0, l1_ratio=0.5):
+        self.method = method
+        self.alpha = alpha
+        self.l1_ratio = l1_ratio  # Only used for elasticnet
+
+    def fit(self, X, y):
+        from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
+
+        if self.method == "ols":
+            self.model_ = LinearRegression()
+        elif self.method == "ridge":
+            self.model_ = Ridge(alpha=self.alpha)
+        elif self.method == "lasso":
+            self.model_ = Lasso(alpha=self.alpha)
+        elif self.method == "elasticnet":
+            self.model_ = ElasticNet(alpha=self.alpha, l1_ratio=self.l1_ratio)
+        else:
+            raise ValueError(
+                f"Unknown method '{self.method}'. Use 'ols', 'ridge', 'lasso', or 'elasticnet'."
+            )
+
+        self.scaler_ = StandardScaler()
+        X_scaled = self.scaler_.fit_transform(X)
+        self.model_.fit(X_scaled, y)
+        return self
+
+    def predict(self, X):
+        if not hasattr(self, "model_"):
+            raise NotFittedError("LinearRegressor is not fitted yet.")
+        X_scaled = self.scaler_.transform(X)
+        return self.model_.predict(X_scaled)
+
+    def get_feature_importance(self, feature_names):
+        """Return absolute coefficients as feature importance."""
+        if not hasattr(self, "model_"):
+            raise NotFittedError("LinearRegressor is not fitted yet.")
+        return pd.Series(np.abs(self.model_.coef_), index=feature_names)
+
+
 ## ------------------------------------------------------------------ ##
 ## NEW REGRESSOR CLASS
 ## ------------------------------------------------------------------ ##
@@ -566,6 +612,8 @@ def run_cross_validation(
     output_dir: Path,
     sa_config: dict,
     calibration_mode: str = "global",
+    local_regressor: str = None,
+    local_regressor_params: dict = None,
 ):
     validation_data = xr_data[
         ["turb_rated_power", "pw_power_cap", "ref_power_cap", "case_index"]
@@ -625,7 +673,12 @@ def run_cross_validation(
         dataset_test = xr_data.where(xr_data.case_index.isin(test_indices), drop=True)
 
         if calibration_mode == "local":
-            calibrator = Calibrator_cls(dataset_train, feature_names=features_list)
+            calibrator = Calibrator_cls(
+                dataset_train,
+                feature_names=features_list,
+                regressor_name=local_regressor,
+                regressor_params=local_regressor_params,
+            )
         else:
             calibrator = Calibrator_cls(dataset_train)
 
@@ -904,6 +957,37 @@ def run_cross_validation(
                 print(f"Could not run bias SHAP (Tree) analysis: {e}")
                 raise e
 
+        elif model_type == "linear":
+            try:
+                print(
+                    "--- Calculating Bias Linear Feature Importance (Coefficients) ---"
+                )
+                all_linear_scores = []
+                feature_names = all_features_df[0].columns
+
+                for i in range(n_splits):
+                    model = all_models[i]
+                    fold_scores = model.get_feature_importance(feature_names)
+                    all_linear_scores.append(fold_scores)
+
+                # Average importances across folds
+                importance_scores = pd.concat(all_linear_scores, axis=1).mean(axis=1)
+                importance_scores = importance_scores.sort_values(ascending=True)
+
+                fig, ax = plt.subplots(figsize=(10, 8))
+                importance_scores.plot(kind="barh", ax=ax)
+                ax.set_title("Linear Model Feature Importance (Mean |Coefficient|)")
+                ax.set_xlabel("Mean |Coefficient| (Impact on Bias Prediction)")
+                plt.tight_layout()
+
+                bar_plot_path = output_dir / "bias_prediction_linear_importance.png"
+                plt.savefig(bar_plot_path, dpi=150, bbox_inches="tight")
+                plt.close(fig)
+                print(f"Saved linear importance plot to: {bar_plot_path}")
+
+            except Exception as e:
+                print(f"Could not run bias linear analysis: {e}")
+                raise e
         elif model_type == "sir":
             try:
                 print(

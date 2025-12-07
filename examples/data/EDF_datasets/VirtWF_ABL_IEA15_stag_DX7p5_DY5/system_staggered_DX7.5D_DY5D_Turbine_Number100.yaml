@@ -29,5 +29,5 @@ attributes:
         dx: 150
         dy: 150
 
-output:
+simulation_output:
   turbine_data: !include turbine_data_ST-dX7p5-dY5-IEA15.nc
