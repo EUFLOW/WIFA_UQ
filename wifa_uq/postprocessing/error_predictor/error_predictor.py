@@ -38,6 +38,7 @@ This script contains:
 - MainPipeline class
 - Cross validation routine
 - SHAP/SIR sensitivity analysis functions
+- Multi-farm CV visualization functions (NEW)
 """
 
 
@@ -454,6 +455,416 @@ def compute_metrics(y_true, bias_samples, pw, ref, data_driv=None):
     }
 
 
+## ------------------------------------------------------------------ ##
+## MULTI-FARM CV VISUALIZATION FUNCTIONS (NEW)
+## ------------------------------------------------------------------ ##
+
+
+def plot_multi_farm_cv_metrics(
+    cv_results: pd.DataFrame,
+    fold_labels: list,
+    output_dir: Path,
+    splitting_mode: str = "LeaveOneGroupOut",
+):
+    """
+    Create visualizations for multi-farm cross-validation results.
+
+    Shows per-fold (per-group) performance metrics to understand
+    how well the model generalizes across different wind farms.
+
+    Args:
+        cv_results: DataFrame with metrics per fold (rmse, r2, mae, etc.)
+        fold_labels: List of strings identifying each fold (e.g., group names left out)
+        output_dir: Directory to save plots
+        splitting_mode: CV splitting mode for title annotation
+    """
+    output_dir = Path(output_dir)
+    n_folds = len(cv_results)
+
+    # --- 1. Per-Fold Metrics Bar Chart ---
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    fig.suptitle(
+        f"Cross-Validation Performance by Fold ({splitting_mode})", fontsize=14
+    )
+
+    metrics = ["rmse", "r2", "mae"]
+    colors = ["#1f77b4", "#2ca02c", "#ff7f0e"]
+
+    x = np.arange(n_folds)
+
+    for ax, metric, color in zip(axes, metrics, colors):
+        values = cv_results[metric].values
+        bars = ax.bar(x, values, color=color, alpha=0.7, edgecolor="black")
+
+        # Add value labels on bars
+        for bar, val in zip(bars, values):
+            height = bar.get_height()
+            ax.annotate(
+                f"{val:.4f}",
+                xy=(bar.get_x() + bar.get_width() / 2, height),
+                xytext=(0, 3),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                rotation=45,
+            )
+
+        # Add mean line
+        mean_val = values.mean()
+        ax.axhline(
+            mean_val,
+            color="red",
+            linestyle="--",
+            linewidth=2,
+            label=f"Mean: {mean_val:.4f}",
+        )
+
+        ax.set_xlabel("Fold (Left-Out Group)")
+        ax.set_ylabel(metric.upper())
+        ax.set_title(f"{metric.upper()} per Fold")
+        ax.set_xticks(x)
+        ax.set_xticklabels(fold_labels, rotation=45, ha="right", fontsize=8)
+        ax.legend(loc="best")
+        ax.grid(axis="y", alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_dir / "cv_fold_metrics.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"    Saved per-fold metrics plot to: {output_dir / 'cv_fold_metrics.png'}")
+
+    # --- 2. Metrics Comparison Heatmap ---
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Normalize metrics for heatmap (z-score within each metric)
+    metrics_for_heatmap = ["rmse", "mae", "r2"]
+    heatmap_data = cv_results[metrics_for_heatmap].copy()
+
+    # For r2, higher is better; for rmse/mae, lower is better
+    # Normalize so that "better" is always higher for visualization
+    heatmap_normalized = heatmap_data.copy()
+    heatmap_normalized["rmse"] = -heatmap_data["rmse"]  # Negate so higher = better
+    heatmap_normalized["mae"] = -heatmap_data["mae"]  # Negate so higher = better
+
+    # Create heatmap
+    im = ax.imshow(heatmap_normalized.T, cmap="RdYlGn", aspect="auto")
+
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label(
+        "Performance (normalized, higher = better)", rotation=270, labelpad=15
+    )
+
+    # Set ticks and labels
+    ax.set_xticks(np.arange(n_folds))
+    ax.set_xticklabels(fold_labels, rotation=45, ha="right")
+    ax.set_yticks(np.arange(len(metrics_for_heatmap)))
+    ax.set_yticklabels([m.upper() for m in metrics_for_heatmap])
+
+    # Add text annotations with actual values
+    for i in range(len(metrics_for_heatmap)):
+        for j in range(n_folds):
+            ax.text(
+                j,
+                i,
+                f"{heatmap_data.iloc[j, i]:.3f}",
+                ha="center",
+                va="center",
+                color="black",
+                fontsize=8,
+            )
+
+    ax.set_xlabel("Fold (Left-Out Group)")
+    ax.set_title("Performance Heatmap Across CV Folds\n(Green = Better Performance)")
+
+    plt.tight_layout()
+    plt.savefig(output_dir / "cv_fold_heatmap.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"    Saved heatmap plot to: {output_dir / 'cv_fold_heatmap.png'}")
+
+    # --- 3. Box Plot Summary ---
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    # Prepare data for box plot
+    metrics_data = [cv_results[m].values for m in ["rmse", "mae", "r2"]]
+
+    bp = ax.boxplot(metrics_data, labels=["RMSE", "MAE", "R²"], patch_artist=True)
+
+    # Color the boxes
+    colors_box = ["#1f77b4", "#ff7f0e", "#2ca02c"]
+    for patch, color in zip(bp["boxes"], colors_box):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.7)
+
+    # Add individual points
+    for i, (metric_vals, color) in enumerate(zip(metrics_data, colors_box)):
+        x_jitter = np.random.normal(i + 1, 0.04, size=len(metric_vals))
+        ax.scatter(
+            x_jitter, metric_vals, alpha=0.6, color=color, edgecolor="black", s=50
+        )
+
+    ax.set_ylabel("Metric Value")
+    ax.set_title(f"Distribution of CV Metrics Across {n_folds} Folds")
+    ax.grid(axis="y", alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_dir / "cv_metrics_boxplot.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"    Saved boxplot to: {output_dir / 'cv_metrics_boxplot.png'}")
+
+
+def plot_farm_wise_predictions(
+    y_tests: list,
+    y_preds: list,
+    fold_labels: list,
+    fold_farm_names: list,
+    output_dir: Path,
+):
+    """
+    Create scatter plots showing predictions vs true values, colored by farm/group.
+
+    Args:
+        y_tests: List of test targets per fold
+        y_preds: List of predictions per fold
+        fold_labels: List of fold identifiers (left-out groups)
+        fold_farm_names: List of arrays, each containing farm names for test cases in that fold
+        output_dir: Directory to save plots
+    """
+    output_dir = Path(output_dir)
+
+    # Combine all folds
+    all_y_test = np.concatenate(y_tests)
+    all_y_pred = np.concatenate(y_preds)
+    all_fold_ids = np.concatenate(
+        [np.full(len(y_tests[i]), fold_labels[i]) for i in range(len(y_tests))]
+    )
+
+    # Get unique fold labels for coloring
+    unique_folds = np.unique(all_fold_ids)
+    n_folds = len(unique_folds)
+
+    # Create colormap
+    cmap = plt.cm.get_cmap("tab10" if n_folds <= 10 else "tab20")
+    colors = {fold: cmap(i / n_folds) for i, fold in enumerate(unique_folds)}
+
+    # --- Main scatter plot colored by fold ---
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    for fold_label in unique_folds:
+        mask = all_fold_ids == fold_label
+        ax.scatter(
+            all_y_test[mask],
+            all_y_pred[mask],
+            c=[colors[fold_label]],
+            label=f"Left out: {fold_label}",
+            alpha=0.6,
+            s=30,
+            edgecolor="white",
+            linewidth=0.5,
+        )
+
+    # Add 1:1 line
+    min_val = min(all_y_test.min(), all_y_pred.min())
+    max_val = max(all_y_test.max(), all_y_pred.max())
+    ax.plot(
+        [min_val, max_val], [min_val, max_val], "k--", linewidth=2, label="1:1 Line"
+    )
+
+    # Calculate overall metrics
+    overall_rmse = np.sqrt(np.mean((all_y_test - all_y_pred) ** 2))
+    overall_r2 = r2_score(all_y_test, all_y_pred)
+
+    ax.set_xlabel("True Bias", fontsize=12)
+    ax.set_ylabel("Predicted Bias", fontsize=12)
+    ax.set_title(
+        f"Predictions vs True Values by Left-Out Group\n"
+        f"Overall RMSE: {overall_rmse:.4f}, R²: {overall_r2:.4f}",
+        fontsize=14,
+    )
+    ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=9)
+    ax.grid(alpha=0.3)
+    ax.set_aspect("equal", adjustable="box")
+
+    plt.tight_layout()
+    plt.savefig(output_dir / "cv_predictions_by_fold.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(
+        f"    Saved predictions scatter plot to: {output_dir / 'cv_predictions_by_fold.png'}"
+    )
+
+    # --- Per-fold subplots ---
+    n_cols = min(3, n_folds)
+    n_rows = (n_folds + n_cols - 1) // n_cols
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 5 * n_rows))
+    if n_folds == 1:
+        axes = np.array([[axes]])
+    elif n_rows == 1:
+        axes = axes.reshape(1, -1)
+
+    for idx, fold_label in enumerate(unique_folds):
+        row, col = divmod(idx, n_cols)
+        ax = axes[row, col]
+
+        mask = all_fold_ids == fold_label
+        y_test_fold = all_y_test[mask]
+        y_pred_fold = all_y_pred[mask]
+
+        ax.scatter(
+            y_test_fold,
+            y_pred_fold,
+            c=[colors[fold_label]],
+            alpha=0.6,
+            s=30,
+            edgecolor="white",
+            linewidth=0.5,
+        )
+
+        # 1:1 line
+        min_v = min(y_test_fold.min(), y_pred_fold.min())
+        max_v = max(y_test_fold.max(), y_pred_fold.max())
+        ax.plot([min_v, max_v], [min_v, max_v], "k--", linewidth=1.5)
+
+        # Per-fold metrics
+        fold_rmse = np.sqrt(np.mean((y_test_fold - y_pred_fold) ** 2))
+        fold_r2 = r2_score(y_test_fold, y_pred_fold) if len(y_test_fold) > 1 else 0
+
+        ax.set_xlabel("True Bias")
+        ax.set_ylabel("Predicted Bias")
+        ax.set_title(
+            f"Left Out: {fold_label}\nRMSE: {fold_rmse:.4f}, R²: {fold_r2:.4f}"
+        )
+        ax.grid(alpha=0.3)
+        ax.set_aspect("equal", adjustable="box")
+
+    # Hide unused subplots
+    for idx in range(n_folds, n_rows * n_cols):
+        row, col = divmod(idx, n_cols)
+        axes[row, col].set_visible(False)
+
+    plt.suptitle("Prediction Quality per CV Fold", fontsize=14, y=1.02)
+    plt.tight_layout()
+    plt.savefig(
+        output_dir / "cv_predictions_per_fold.png", dpi=150, bbox_inches="tight"
+    )
+    plt.close(fig)
+    print(
+        f"    Saved per-fold predictions to: {output_dir / 'cv_predictions_per_fold.png'}"
+    )
+
+
+def plot_generalization_matrix(
+    cv_results: pd.DataFrame, fold_labels: list, output_dir: Path
+):
+    """
+    Create a generalization analysis visualization showing how training on
+    certain farm groups affects prediction on others.
+
+    Args:
+        cv_results: DataFrame with metrics per fold
+        fold_labels: List of fold identifiers (left-out groups)
+        output_dir: Directory to save plots
+    """
+    output_dir = Path(output_dir)
+    n_folds = len(fold_labels)
+
+    # Create summary table
+    fig, ax = plt.subplots(figsize=(12, max(4, n_folds * 0.5)))
+
+    # Prepare data for table
+    table_data = []
+    for i, label in enumerate(fold_labels):
+        row = [
+            label,
+            f"{cv_results['rmse'].iloc[i]:.4f}",
+            f"{cv_results['r2'].iloc[i]:.4f}",
+            f"{cv_results['mae'].iloc[i]:.4f}",
+        ]
+        table_data.append(row)
+
+    # Add mean row
+    table_data.append(
+        [
+            "MEAN",
+            f"{cv_results['rmse'].mean():.4f}",
+            f"{cv_results['r2'].mean():.4f}",
+            f"{cv_results['mae'].mean():.4f}",
+        ]
+    )
+
+    # Add std row
+    table_data.append(
+        [
+            "STD",
+            f"{cv_results['rmse'].std():.4f}",
+            f"{cv_results['r2'].std():.4f}",
+            f"{cv_results['mae'].std():.4f}",
+        ]
+    )
+
+    columns = ["Left-Out Group", "RMSE", "R²", "MAE"]
+
+    # Hide axes
+    ax.axis("off")
+
+    # Create table
+    table = ax.table(
+        cellText=table_data,
+        colLabels=columns,
+        loc="center",
+        cellLoc="center",
+    )
+
+    # Style the table
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.2, 1.5)
+
+    # Color header row
+    for j, col in enumerate(columns):
+        table[(0, j)].set_facecolor("#4472C4")
+        table[(0, j)].set_text_props(color="white", weight="bold")
+
+    # Color mean/std rows
+    for j in range(len(columns)):
+        table[(n_folds + 1, j)].set_facecolor("#E2EFDA")  # Mean row
+        table[(n_folds + 2, j)].set_facecolor("#FCE4D6")  # Std row
+
+    # Color-code RMSE cells based on value
+    rmse_values = cv_results["rmse"].values
+    rmse_min, rmse_max = rmse_values.min(), rmse_values.max()
+
+    for i in range(n_folds):
+        # Normalize RMSE (lower is better, so invert for color)
+        if rmse_max > rmse_min:
+            norm_val = (rmse_values[i] - rmse_min) / (rmse_max - rmse_min)
+        else:
+            norm_val = 0.5
+
+        # Color from green (good) to red (bad)
+        color = plt.cm.RdYlGn(1 - norm_val)
+        table[(i + 1, 1)].set_facecolor(color)
+
+    plt.title(
+        "Cross-Validation Generalization Summary\n"
+        "(Testing on each group after training on all others)",
+        fontsize=14,
+        pad=20,
+    )
+
+    plt.tight_layout()
+    plt.savefig(
+        output_dir / "cv_generalization_summary.png", dpi=150, bbox_inches="tight"
+    )
+    plt.close(fig)
+    print(
+        f"    Saved generalization summary to: {output_dir / 'cv_generalization_summary.png'}"
+    )
+
+
+## ------------------------------------------------------------------ ##
+
+
 def run_observation_sensitivity(
     database,
     features_list,
@@ -622,7 +1033,12 @@ def run_cross_validation(
 
     splitting_mode = cv_config.get("splitting_mode", "kfold_shuffled")
 
+    # Track fold labels for multi-farm visualization
+    fold_labels = []
+    is_multi_farm = False
+
     if splitting_mode == "LeaveOneGroupOut":
+        is_multi_farm = True
         groups = xr_data["wind_farm"].values
 
         groups_cfg = cv_config.get("groups")
@@ -642,17 +1058,29 @@ def run_cross_validation(
             manual_groups = groups
 
         cv = LeaveOneGroupOut()
-        splits = cv.split(xr_data.case_index, groups=manual_groups)
+        splits = list(cv.split(xr_data.case_index, groups=manual_groups))
         n_splits = cv.get_n_splits(groups=manual_groups)
-        print(f"Using LeaveOneGroupOut with {n_splits} groups.")
+
+        # Extract fold labels (the left-out group for each fold)
+        unique_groups = np.unique(manual_groups)
+        for train_idx, test_idx in splits:
+            # Find which group is left out (present in test but not in train)
+            test_groups = np.unique(manual_groups[test_idx])
+            fold_labels.append(
+                str(test_groups[0]) if len(test_groups) == 1 else str(test_groups)
+            )
+
+        print(f"Using LeaveOneGroupOut with {n_splits} groups: {list(unique_groups)}")
 
     if splitting_mode == "kfold_shuffled":
         n_splits = cv_config.get("n_splits", 5)
         cv = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-        splits = cv.split(xr_data.case_index)
+        splits = list(cv.split(xr_data.case_index))
+        fold_labels = [f"Fold {i+1}" for i in range(n_splits)]
         print(f"Using KFold with {n_splits} splits.")
 
     stats_cv, y_preds, y_tests, pw_all, ref_all = [], [], [], [], []
+    fold_farm_names = []  # Track farm names per fold for visualization
 
     # --- Add lists to store items for SHAP ---
     all_models = []
@@ -671,6 +1099,10 @@ def run_cross_validation(
 
         dataset_train = xr_data.where(xr_data.case_index.isin(train_indices), drop=True)
         dataset_test = xr_data.where(xr_data.case_index.isin(test_indices), drop=True)
+
+        # Track farm names for this fold (for visualization)
+        if "wind_farm" in xr_data.coords:
+            fold_farm_names.append(xr_data.wind_farm.values[test_idx_locs])
 
         if calibration_mode == "local":
             calibrator = Calibrator_cls(
@@ -839,6 +1271,32 @@ def run_cross_validation(
     plt.savefig(plot_path, dpi=150)
     print(f"Saved correction plot to: {plot_path}")
     plt.close(fig)  # Close the figure
+
+    # --- MULTI-FARM CV VISUALIZATION (NEW) ---
+    if is_multi_farm or splitting_mode == "LeaveOneGroupOut":
+        print("--- Generating Multi-Farm CV Visualizations ---")
+
+        # 1. Per-fold metrics visualization
+        plot_multi_farm_cv_metrics(
+            cv_results=cv_results,
+            fold_labels=fold_labels,
+            output_dir=output_dir,
+            splitting_mode=splitting_mode,
+        )
+
+        # 2. Predictions colored by fold
+        plot_farm_wise_predictions(
+            y_tests=y_tests,
+            y_preds=y_preds,
+            fold_labels=fold_labels,
+            fold_farm_names=fold_farm_names,
+            output_dir=output_dir,
+        )
+
+        # 3. Generalization summary table
+        plot_generalization_matrix(
+            cv_results=cv_results, fold_labels=fold_labels, output_dir=output_dir
+        )
 
     # --- PARAMETER PREDICTION PLOT (Local Calibration Only) ---
     if calibration_mode == "local" and all_predicted_params and swept_params:
