@@ -136,6 +136,61 @@ class SensitivityConfig(BaseModel):
     pce_config: Optional[PCESensitivityConfig] = None
 
 
+class PartialDependenceConfig(BaseModel):
+    """Configuration for partial dependence analysis."""
+
+    enabled: bool = True
+    grid_resolution: int = 50
+
+
+class InteractionsConfig(BaseModel):
+    """Configuration for feature interaction analysis."""
+
+    enabled: bool = True
+    top_n: int = 5  # Number of top interactions to report
+
+
+class RegimeAnalysisConfig(BaseModel):
+    """Configuration for error regime identification."""
+
+    enabled: bool = True
+    n_clusters: int = 3  # Number of regimes to identify
+    bias_percentile: float = 75.0  # Focus on cases above this percentile
+
+
+class ParameterRelationshipsConfig(BaseModel):
+    """Configuration for parameter-condition relationship analysis."""
+
+    enabled: bool = True  # Only works with LocalParameterPredictor
+
+
+class PhysicsInsightsConfig(BaseModel):
+    """
+    Configuration for physics insights analysis.
+
+    Extracts interpretable physical understanding from ML bias correction models,
+    answering questions like "why does the wake model fail in certain conditions?"
+
+    Outputs:
+    - partial_dependence.png: How bias varies with each atmospheric feature
+    - feature_interactions.png: Which feature combinations jointly drive error
+    - error_regimes.png: Distinct failure mode clusters
+    - parameter_relationships.png: How optimal params vary with conditions
+    - physics_insights_report.md: Human-readable summary
+    - physics_insights.json: Machine-readable results
+    """
+
+    run: bool = False
+    partial_dependence: PartialDependenceConfig = Field(
+        default_factory=PartialDependenceConfig
+    )
+    interactions: InteractionsConfig = Field(default_factory=InteractionsConfig)
+    regime_analysis: RegimeAnalysisConfig = Field(default_factory=RegimeAnalysisConfig)
+    parameter_relationships: ParameterRelationshipsConfig = Field(
+        default_factory=ParameterRelationshipsConfig
+    )
+
+
 class FarmConfig(BaseModel):
     """Configuration for a single farm in multi-farm mode."""
 
@@ -198,6 +253,9 @@ class WifaUQConfig(BaseModel):
     database_gen: DatabaseGenConfig = Field(default_factory=DatabaseGenConfig)
     error_prediction: ErrorPredictionConfig
     sensitivity_analysis: SensitivityConfig = Field(default_factory=SensitivityConfig)
+    physics_insights: PhysicsInsightsConfig = Field(
+        default_factory=PhysicsInsightsConfig
+    )
 
     @model_validator(mode="after")
     def check_paths_or_farms(self):
