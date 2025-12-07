@@ -1,5 +1,6 @@
 stages:
   - test
+  - deploy
 
 variables:
   PRE_COMMIT_HOME: ${CI_PROJECT_DIR}/.cache/pre-commit
@@ -11,7 +12,8 @@ pre-commit:
   stage: test
   script:
     - apt update && apt install -y git
-    - pixi run -e default pre-commit run --all-files
+    - pip install pre-commit --break-system-packages
+    - pre-commit run --all-files
   cache:
     key: pre-commit-cache
     paths:
@@ -26,7 +28,7 @@ lint:
   stage: test
   script:
     - apt update && apt install -y git
-    - pixi run  --locked lint
+    - pixi run lint
   tags:
     - linux
   allow_failure: true
@@ -52,7 +54,7 @@ test:
   tags:
     - linux
 
-# ===== TEST ALL =====
+# ===== TEST ALL (MANUAL) =====
 test-all:
   image: ghcr.io/prefix-dev/pixi:latest
   stage: test
@@ -64,14 +66,13 @@ test-all:
   when: manual
   allow_failure: true
 
-# ===== COVERAGE BADGE / PAGES =====
+# ===== PAGES (COVERAGE REPORT + BADGE) =====
 pages:
   image: ghcr.io/prefix-dev/pixi:latest
-  stage: test
+  stage: deploy
   needs:
     - test
   script:
-    - apt update && apt install -y git
     - pip install coverage-badge --break-system-packages
     - mkdir -p public
     - coverage-badge -o public/coverage.svg -f || true
@@ -79,7 +80,6 @@ pages:
   artifacts:
     paths:
       - public
-    expire_in: 30 days
   tags:
     - linux
   only:
