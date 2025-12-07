@@ -81,6 +81,7 @@ platforms = ["linux-64", "osx-arm64"]
 [tool.pixi.dependencies]
 python = "~=3.12.0"
 hdf5 = "*"
+gdal = "*"
 netcdf4 = "*"
 scikit-learn = ">=1.7.2,<2"
 xgboost = "~=2.0.3"
@@ -91,6 +92,12 @@ numpy = "*"
 openturns = ">=1.26,<2"
 pytest = ">=9.0.1,<10"
 pytest-cov = ">=7.0.0,<8"
+pydantic = ">=2.12.5,<3"
+rasterio = "*"
+rioxarray = "*"
+pyogrio = "*"
+fiona = "*"
+xarray = ">=2022.0.0,<2025"
 
 [tool.pixi.pypi-dependencies]
 wifa_uq = { path = ".", editable = true }
