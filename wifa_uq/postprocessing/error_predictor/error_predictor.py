@@ -398,22 +398,79 @@ class MainPipeline:
 
         Returns:
             Array of sample indices (one per case)
+
+        Raises:
+            ValueError: If no valid parameters found for distance calculation
         """
         n_cases = len(predicted_params)
         n_samples = len(dataset.sample)
         swept_params = self.calibrator.swept_params
 
+        # Validation 1: Check swept_params is not empty
+        if not swept_params:
+            raise ValueError(
+                "No swept parameters defined. Cannot find closest samples. "
+                "Check that the database has 'swept_params' in attrs or that "
+                "parameters were correctly inferred."
+            )
+
+        # Validation 2: Check which parameters are actually available
+        available_params = []
+        missing_in_dataset = []
+        missing_in_predictions = []
+
+        for param_name in swept_params:
+            in_dataset = param_name in dataset.coords
+            in_predictions = param_name in predicted_params.columns
+
+            if in_dataset and in_predictions:
+                available_params.append(param_name)
+            elif not in_dataset:
+                missing_in_dataset.append(param_name)
+            elif not in_predictions:
+                missing_in_predictions.append(param_name)
+
+        # Validation 3: Ensure we have at least one parameter to use
+        if not available_params:
+            raise ValueError(
+                f"No valid parameters for distance calculation.\n"
+                f"  Swept params: {swept_params}\n"
+                f"  Missing in dataset.coords: {missing_in_dataset}\n"
+                f"  Missing in predicted_params: {missing_in_predictions}"
+            )
+
+        # Warn about partial matches (some params missing)
+        if missing_in_dataset or missing_in_predictions:
+            import warnings
+
+            warnings.warn(
+                f"Some swept parameters unavailable for distance calculation:\n"
+                f"  Using: {available_params}\n"
+                f"  Missing in dataset: {missing_in_dataset}\n"
+                f"  Missing in predictions: {missing_in_predictions}",
+                UserWarning,
+            )
+
+        # Calculate distances using only available parameters
         closest_indices = np.zeros(n_cases, dtype=int)
 
         for case_idx in range(n_cases):
             target_params = predicted_params.iloc[case_idx]
 
-            # Calculate distance to each sample's parameters
             distances = np.zeros(n_samples)
-            for param_name in swept_params:
-                if param_name in dataset.coords:
-                    sample_values = dataset.coords[param_name].values
-                    distances += (sample_values - target_params[param_name]) ** 2
+            for param_name in available_params:
+                sample_values = dataset.coords[param_name].values
+                target_value = target_params[param_name]
+
+                # Normalize by parameter range to handle different scales
+                param_range = sample_values.max() - sample_values.min()
+                if param_range > 0:
+                    normalized_diff = (sample_values - target_value) / param_range
+                else:
+                    # All samples have same value for this param
+                    normalized_diff = np.zeros_like(sample_values)
+
+                distances += normalized_diff**2
 
             closest_indices[case_idx] = int(np.argmin(distances))
 
