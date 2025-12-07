@@ -91,6 +91,7 @@ numpy = "*"
 openturns = ">=1.26,<2"
 pytest = ">=9.0.1,<10"
 pytest-cov = ">=7.0.0,<8"
+gdal = "*"
 
 [tool.pixi.pypi-dependencies]
 wifa_uq = { path = ".", editable = true }
