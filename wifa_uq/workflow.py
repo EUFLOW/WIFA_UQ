@@ -1,3 +1,10 @@
+# wifa_uq/workflow.py
+"""
+Main workflow orchestration for WIFA-UQ.
+
+Supports single-farm and multi-farm configurations with optional physics insights.
+"""
+
 import yaml
 import xarray as xr
 from pathlib import Path
@@ -78,33 +85,33 @@ def build_predictor_pipeline(model_name: str, model_params: dict | None = None):
 
     if model_name == "XGB":
         print("Building XGBoost Regressor pipeline...")
+        xgb_params = {
+            "max_depth": model_params.get("max_depth", 3),
+            "n_estimators": model_params.get("n_estimators", 500),
+            "learning_rate": model_params.get("learning_rate", 0.1),
+            "random_state": model_params.get("random_state", 42),
+        }
         pipeline = Pipeline(
             [
                 ("scaler", StandardScaler()),
-                ("model", xgb.XGBRegressor(max_depth=3, n_estimators=500)),
+                ("model", xgb.XGBRegressor(**xgb_params)),
             ]
         )
         model_type = "tree"
 
     elif model_name == "SIRPolynomial":
         print("Building SIR+Polynomial Regressor pipeline...")
-        # Note: SIRPolynomialRegressor includes its own scaling
         pipeline = SIRPolynomialRegressor(n_directions=1, degree=2)
         model_type = "sir"
 
     elif model_name == "PCE":
         print("Building PCE Regressor pipeline...")
-
-        # model_params come directly from YAML (error_prediction.model_params)
-        # They are passed as kwargs to PCERegressor, e.g.:
-        #   degree, marginals, copula, q, max_features, allow_high_dim
-
         pipeline = PCERegressor(**model_params)
         model_type = "pce"
     else:
         raise ValueError(
             f"Unknown model '{model_name}' in config. "
-            f"Available models are: ['XGB', 'SIRPolynomial', 'PCE']"
+            f"Available models are: ['XGB', 'SIRPolynomial', 'PCE', 'Linear']"
         )
     return pipeline, model_type
 
@@ -329,12 +336,13 @@ def _run_multi_farm_workflow(config: dict, base_dir: Path):
 
 def _run_error_prediction(config: dict, database: xr.Dataset, output_dir: Path):
     """
-    Run error prediction and sensitivity analysis.
+    Run error prediction, sensitivity analysis, and physics insights.
 
     Shared between single-farm and multi-farm workflows.
     """
     sa_config = config.get("sensitivity_analysis", {})
     err_config = config["error_prediction"]
+    physics_config = config.get("physics_insights", {})
     model_name = err_config.get("model", "XGB")
     model_params = err_config.get("model_params", {})
 
@@ -358,6 +366,10 @@ def _run_error_prediction(config: dict, database: xr.Dataset, output_dir: Path):
         print("--- Skipping Observation Sensitivity (as per config) ---")
 
     # === ERROR PREDICTION / UQ STEP ===
+    fitted_model = None
+    fitted_calibrator = None
+    y_bias_all = None
+
     if err_config["run"]:
         print("--- Running Error Prediction ---")
 
@@ -401,6 +413,72 @@ def _run_error_prediction(config: dict, database: xr.Dataset, output_dir: Path):
             y_tests=np.array(y_tests, dtype=object),
         )
         print(f"Results saved to {output_dir}")
+
+        # --- FIT FINAL MODEL FOR PHYSICS INSIGHTS ---
+        # Re-fit on all data for physics insights analysis
+        if physics_config.get("run", False):
+            print("--- Fitting Final Model for Physics Insights ---")
+
+            # Build fresh pipeline
+            final_pipeline, _ = build_predictor_pipeline(model_name, model_params)
+
+            # Prepare full dataset
+            X_df = database.isel(sample=0).to_dataframe().reset_index()
+            features = err_config["features"]
+            X = X_df[features]
+
+            # Fit calibrator on full data
+            if calibration_mode == "local":
+                fitted_calibrator = Calibrator_cls(
+                    database,
+                    feature_names=features,
+                    regressor_name=err_config.get("local_regressor"),
+                    regressor_params=err_config.get("local_regressor_params", {}),
+                )
+            else:
+                fitted_calibrator = Calibrator_cls(database)
+            fitted_calibrator.fit()
+
+            # Get bias values at calibrated parameters
+            if calibration_mode == "local":
+                optimal_indices = fitted_calibrator.get_optimal_indices()
+                y_bias_all = np.array(
+                    [
+                        float(
+                            database["model_bias_cap"]
+                            .isel(case_index=i, sample=idx)
+                            .values
+                        )
+                        for i, idx in enumerate(optimal_indices)
+                    ]
+                )
+            else:
+                best_idx = fitted_calibrator.best_idx_
+                y_bias_all = database["model_bias_cap"].sel(sample=best_idx).values
+
+            # Fit final model
+            final_pipeline.fit(X, y_bias_all)
+            fitted_model = final_pipeline
+
+        # === PHYSICS INSIGHTS ===
+        if physics_config.get("run", False) and fitted_model is not None:
+            print("--- Running Physics Insights Analysis ---")
+            from wifa_uq.postprocessing.physics_insights import run_physics_insights
+
+            insights_dir = output_dir / "physics_insights"
+            insights_dir.mkdir(exist_ok=True)
+
+            run_physics_insights(
+                database=database,
+                fitted_model=fitted_model,
+                calibrator=fitted_calibrator,
+                features_list=err_config["features"],
+                y_bias=y_bias_all,
+                output_dir=insights_dir,
+                config=physics_config,
+            )
+
+            print("Physics insights analysis complete.")
 
         print("--- Workflow complete ---")
         return cv_df, y_preds, y_tests

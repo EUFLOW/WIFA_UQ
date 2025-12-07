@@ -67,3 +67,28 @@ sensitivity_analysis:
   # or plot "directions_" for "SIRPolynomial".
   run_observation_sensitivity: true
   run_bias_sensitivity: true
+
+physics_insights:
+  run: true
+
+  # How bias varies with each feature (always recommended)
+  partial_dependence:
+    enabled: true
+    # Optionally limit to specific features:
+    # features: [ABL_height, wind_veer, lapse_rate]
+
+  # Feature interaction analysis (requires tree-based model)
+  interactions:
+    enabled: true
+    top_n: 5  # Report top 5 strongest interactions
+
+  # Cluster high-bias cases to find distinct failure modes
+  regime_analysis:
+    enabled: true
+    n_clusters: 3           # Number of regimes to identify
+    bias_percentile: 75     # Focus on top 25% bias cases
+
+  # How optimal parameters vary with conditions (local calibration only)
+  # This is the key insight: "what the physics model is missing"
+  parameter_relationships:
+    enabled: true

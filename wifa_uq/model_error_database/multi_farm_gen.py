@@ -12,122 +12,15 @@ from pathlib import Path
 
 import numpy as np
 import xarray as xr
-from ruamel.yaml import YAML
 
 from wifa_uq.model_error_database.database_gen import DatabaseGenerator
+from wifa_uq.model_error_database.path_inference import (
+    infer_paths_from_system_config,
+    validate_required_paths,
+)
 from wifa_uq.preprocessing.preprocessing import PreprocessingInputs
 
 logger = logging.getLogger(__name__)
-
-
-def _get_yaml_parser() -> YAML:
-    """Get a basic YAML parser without !include resolution."""
-    yaml_obj = YAML(typ="safe", pure=True)
-    yaml_obj.default_flow_style = False
-    return yaml_obj
-
-
-def _extract_include_paths_windio(yaml_path: Path) -> dict[str, Path]:
-    """
-    Parse a windIO YAML file and extract paths from !include directives.
-
-    Uses windIO-style parsing to recursively find all included files
-    and map them to their semantic keys.
-
-    Returns a dict with keys like:
-      - 'site': path to site yaml
-      - 'wind_farm': path to wind farm yaml
-      - 'energy_resource': path to energy resource yaml
-      - 'turbine_data': path to turbine data nc
-      - 'wind_resource': path to wind resource nc (the actual resource file)
-    """
-    base_dir = yaml_path.parent
-    includes = {}
-
-    # Read raw YAML content to find !include directives
-    with open(yaml_path, "r") as f:
-        content = f.read()
-
-    # Parse line by line to find !include patterns
-    # This handles various formats: !include file.yaml, !include "file.yaml", etc.
-    import re
-
-    # Pattern for key: !include filename
-    # Handles nested indentation
-    include_pattern = re.compile(
-        r'^\s*(\w+):\s*!include\s+["\']?([^"\'\s\n#]+)["\']?', re.MULTILINE
-    )
-
-    for match in include_pattern.finditer(content):
-        key = match.group(1)
-        filename = match.group(2)
-        file_path = base_dir / filename
-
-        if file_path.exists():
-            includes[key] = file_path
-
-            # If this is another YAML, recursively extract its includes
-            if filename.endswith(".yaml") or filename.endswith(".yml"):
-                try:
-                    nested = _extract_include_paths_windio(file_path)
-                    # Add nested includes, but don't overwrite top-level keys
-                    for nested_key, nested_path in nested.items():
-                        if nested_key not in includes:
-                            includes[nested_key] = nested_path
-                except Exception as e:
-                    logger.debug(f"Could not parse nested YAML {file_path}: {e}")
-
-    return includes
-
-
-def _find_resource_file_from_windio(system_yaml_path: Path) -> Path | None:
-    """
-    Follow the windIO include chain to find the actual resource NC file.
-
-    Path is typically:
-    wind_energy_system.yaml
-      -> site: !include energy_site.yaml
-        -> energy_resource: !include energy_resource.yaml
-          -> wind_resource: !include <resource_file>.nc
-
-    Returns the path to the NC file or None if not found.
-    """
-    includes = _extract_include_paths_windio(system_yaml_path)
-
-    # Direct wind_resource reference
-    if "wind_resource" in includes:
-        path = includes["wind_resource"]
-        if path.suffix in [".nc", ".netcdf"]:
-            return path
-
-    # Check energy_resource (might be YAML or NC)
-    if "energy_resource" in includes:
-        er_path = includes["energy_resource"]
-        if er_path.suffix in [".nc", ".netcdf"]:
-            return er_path
-        elif er_path.suffix in [".yaml", ".yml"]:
-            # Parse the energy_resource YAML
-            er_includes = _extract_include_paths_windio(er_path)
-            if "wind_resource" in er_includes:
-                return er_includes["wind_resource"]
-
-    # Check site YAML
-    if "site" in includes:
-        site_path = includes["site"]
-        if site_path.suffix in [".yaml", ".yml"]:
-            site_includes = _extract_include_paths_windio(site_path)
-
-            # Check for energy_resource in site
-            if "energy_resource" in site_includes:
-                er_path = site_includes["energy_resource"]
-                if er_path.suffix in [".nc", ".netcdf"]:
-                    return er_path
-                elif er_path.suffix in [".yaml", ".yml"]:
-                    er_includes = _extract_include_paths_windio(er_path)
-                    if "wind_resource" in er_includes:
-                        return er_includes["wind_resource"]
-
-    return None
 
 
 class MultiFarmDatabaseGenerator:
@@ -138,7 +31,7 @@ class MultiFarmDatabaseGenerator:
       - name: Unique identifier for the farm
       - system_config: Path to wind energy system YAML (windIO format)
 
-    Optional (if data can't be auto-extracted from system_config):
+    Optional (paths are auto-inferred if not provided):
       - reference_power: Path to reference power NetCDF
       - reference_resource: Path to reference resource NetCDF
       - wind_farm_layout: Path to wind farm layout YAML
@@ -147,6 +40,7 @@ class MultiFarmDatabaseGenerator:
     ----------
     farm_configs : list[dict]
         List of farm configurations with 'name' and 'system_config' keys
+        (and optionally resolved paths from workflow.py)
 
     param_config : dict
         Parameter sampling configuration (shared across all farms)
@@ -212,128 +106,53 @@ class MultiFarmDatabaseGenerator:
 
         logger.info(f"Validated {len(self.farm_configs)} farm configurations")
 
-    def _infer_farm_paths(self, farm_config: dict) -> dict:
+    def _ensure_farm_paths(self, farm_config: dict) -> dict:
         """
-        Infer paths for a farm from system_config using windIO include parsing.
+        Ensure all required paths are present for a farm.
 
-        Parses the windIO YAML structure to find referenced files.
-        Falls back to pattern matching on common filenames.
+        If paths were already resolved by workflow.py, use those.
+        Otherwise, infer from system_config.
         """
-        system_path = Path(farm_config["system_config"])
-        farm_dir = system_path.parent
         farm_name = farm_config["name"]
 
-        # Use explicit paths if provided
-        paths = {
-            "name": farm_name,
-            "system_config": system_path,
-        }
-
-        if "reference_power" in farm_config:
-            paths["reference_power"] = Path(farm_config["reference_power"])
-        if "reference_resource" in farm_config:
-            paths["reference_resource"] = Path(farm_config["reference_resource"])
-        if "wind_farm_layout" in farm_config:
-            paths["wind_farm_layout"] = Path(farm_config["wind_farm_layout"])
-
-        # If we still need paths, parse windIO includes
-        missing_keys = {
+        # Check if paths are already resolved (Path objects present)
+        required_paths = [
+            "system_config",
             "reference_power",
             "reference_resource",
             "wind_farm_layout",
-        } - set(paths.keys())
+        ]
+        all_resolved = all(
+            key in farm_config and isinstance(farm_config.get(key), Path)
+            for key in required_paths
+        )
 
-        if missing_keys:
-            print(f"  Parsing windIO structure for {farm_name}...")
-            try:
-                includes = _extract_include_paths_windio(system_path)
-                print(f"    Found includes: {list(includes.keys())}")
+        if all_resolved:
+            # Already resolved by workflow.py
+            return farm_config
 
-                # Reference power: simulation_output.turbine_data
-                if "reference_power" not in paths:
-                    if "turbine_data" in includes:
-                        paths["reference_power"] = includes["turbine_data"]
-                        print(
-                            f"    Found reference_power: {paths['reference_power'].name}"
-                        )
+        # Need to infer paths
+        system_config_path = Path(farm_config["system_config"])
 
-                # Reference resource: Follow the windIO chain to find the NC file
-                if "reference_resource" not in paths:
-                    resource_path = _find_resource_file_from_windio(system_path)
-                    if resource_path and resource_path.exists():
-                        paths["reference_resource"] = resource_path
-                        print(
-                            f"    Found reference_resource: {paths['reference_resource'].name}"
-                        )
+        # Build explicit paths dict
+        explicit_paths = {}
+        for key in ["reference_power", "reference_resource", "wind_farm_layout"]:
+            if key in farm_config and farm_config[key] is not None:
+                explicit_paths[key] = Path(farm_config[key])
 
-                # Wind farm layout
-                if "wind_farm_layout" not in paths:
-                    if "wind_farm" in includes:
-                        paths["wind_farm_layout"] = includes["wind_farm"]
-                        print(
-                            f"    Found wind_farm_layout: {paths['wind_farm_layout'].name}"
-                        )
+        print(f"  Inferring paths for {farm_name}...")
+        resolved = infer_paths_from_system_config(
+            system_config_path=system_config_path,
+            explicit_paths=explicit_paths,
+        )
 
-            except Exception as e:
-                print(f"    Warning: Could not parse windIO structure: {e}")
+        # Validate
+        validate_required_paths(resolved)
 
-        # Final fallback: pattern matching on common filenames
-        if "reference_power" not in paths:
-            for name in ["turbine_data.nc", "power.nc", "ref_power.nc"]:
-                candidate = farm_dir / name
-                if candidate.exists():
-                    paths["reference_power"] = candidate
-                    print(f"    Found reference_power by pattern: {candidate.name}")
-                    break
+        # Add name back
+        resolved["name"] = farm_name
 
-        if "reference_resource" not in paths:
-            # Try common names first
-            for name in ["resource.nc", "energy_resource.nc", "originalData.nc"]:
-                candidate = farm_dir / name
-                if candidate.exists():
-                    paths["reference_resource"] = candidate
-                    print(f"    Found reference_resource by pattern: {candidate.name}")
-                    break
-
-            # If still not found, look for any NC file with resource-like variables
-            if "reference_resource" not in paths:
-                for nc_file in farm_dir.glob("*.nc"):
-                    if nc_file.name in ["turbine_data.nc"]:
-                        continue  # Skip power files
-                    try:
-                        with xr.open_dataset(nc_file) as ds:
-                            # Check for typical resource variables
-                            resource_vars = [
-                                "wind_speed",
-                                "WS",
-                                "ws",
-                                "u",
-                                "U",
-                                "wind_direction",
-                                "WD",
-                                "wd",
-                            ]
-                            if any(
-                                v in ds.data_vars or v in ds.coords
-                                for v in resource_vars
-                            ):
-                                paths["reference_resource"] = nc_file
-                                print(
-                                    f"    Found reference_resource by content: {nc_file.name}"
-                                )
-                                break
-                    except Exception:
-                        continue
-
-        if "wind_farm_layout" not in paths:
-            for name in ["wind_farm.yaml", "layout.yaml", "plant_wind_farm.yaml"]:
-                candidate = farm_dir / name
-                if candidate.exists():
-                    paths["wind_farm_layout"] = candidate
-                    print(f"    Found wind_farm_layout by pattern: {candidate.name}")
-                    break
-
-        return paths
+        return resolved
 
     def _generate_single_farm(self, farm_config: dict) -> xr.Dataset:
         """
@@ -350,37 +169,10 @@ class MultiFarmDatabaseGenerator:
             Database with wind_farm coordinate set to farm name
         """
         farm_name = farm_config["name"]
-        print(f"Processing farm: {farm_name}")
+        print(f"\nProcessing farm: {farm_name}")
 
-        # Infer any missing paths
-        paths = self._infer_farm_paths(farm_config)
-
-        # Validate required paths exist
-        required_paths = [
-            "system_config",
-            "reference_power",
-            "reference_resource",
-            "wind_farm_layout",
-        ]
-        missing = []
-        for key in required_paths:
-            if key not in paths:
-                missing.append(key)
-            elif not paths[key].exists():
-                raise FileNotFoundError(
-                    f"{key} not found for farm '{farm_name}': {paths[key]}"
-                )
-
-        if missing:
-            # List what files exist in the directory for debugging
-            farm_dir = Path(farm_config["system_config"]).parent
-            existing_files = sorted(farm_dir.glob("*"))
-            raise FileNotFoundError(
-                f"Could not find {missing} for farm '{farm_name}'.\n"
-                f"Please specify explicitly in the config.\n"
-                f"Files in {farm_dir}:\n  "
-                + "\n  ".join(str(f.name) for f in existing_files)
-            )
+        # Ensure all paths are resolved
+        paths = self._ensure_farm_paths(farm_config)
 
         print(f"  system_config: {paths['system_config'].name}")
         print(f"  reference_power: {paths['reference_power'].name}")
@@ -423,9 +215,7 @@ class MultiFarmDatabaseGenerator:
         db = generator.generate_database()
 
         # Ensure wind_farm coordinate is set to our explicit name
-        # (overwrite whatever was inferred from the data files)
         if "wind_farm" in db.dims:
-            # Replace the wind_farm values with our explicit name
             db = db.assign_coords(wind_farm=[farm_name])
 
         return db
@@ -447,7 +237,7 @@ class MultiFarmDatabaseGenerator:
         xr.Dataset
             Combined database with unique case indices
         """
-        print(f"Combining {len(databases)} farm databases...")
+        print(f"\nCombining {len(databases)} farm databases...")
 
         # Re-index case_index to be unique across farms
         reindexed = []
@@ -483,7 +273,7 @@ class MultiFarmDatabaseGenerator:
         # Validate
         self._validate_combined_database(combined)
 
-        print(f"Combined database: {combined.dims['case_index']} total cases")
+        print(f"\nCombined database: {combined.dims['case_index']} total cases")
 
         return combined
 
@@ -539,7 +329,7 @@ class MultiFarmDatabaseGenerator:
         # Save
         output_path = self.output_dir / self.database_file
         combined.to_netcdf(output_path)
-        print(f"Saved combined database to: {output_path}")
+        print(f"\nSaved combined database to: {output_path}")
 
         return combined
 
@@ -561,6 +351,7 @@ def generate_multi_farm_database(
     ----------
     farm_configs : list[dict]
         List of farm configurations with 'name' and 'system_config' keys
+        (paths can be pre-resolved or will be auto-inferred)
     param_config : dict
         Parameter sampling configuration
     n_samples : int

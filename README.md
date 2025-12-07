@@ -1,6 +1,6 @@
 # FLOW META API
 
-![Coverage](https://eu-flow.gitlab.io/wp4/flow-meta-api/coverage.svg)
+![Coverage](https://gitlab.windenergy.dtu.dk/eu-flow/wp4/flow-meta-api/coverage.svg)
 
 ## Description
 
