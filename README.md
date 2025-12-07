@@ -1,5 +1,7 @@
 # FLOW META API
 
+![Coverage](https://eu-flow.gitlab.io/wp4/flow-meta-api/coverage.svg)
+
 ## Description
 
 This repository is created in the context of Task 4.3 of the FLOW project designed to develop an open-source Python framework integrating tools to perform calibration and bias correction with uncertainty quantification.
