@@ -4,7 +4,6 @@ stages:
 
 variables:
   PRE_COMMIT_HOME: ${CI_PROJECT_DIR}/.cache/pre-commit
-  PIXI_PLATFORM: linux-64
 
 # ===== PRE-COMMIT =====
 pre-commit:
@@ -28,6 +27,7 @@ lint:
   stage: test
   script:
     - apt update && apt install -y git
+    - rm -f pixi.lock
     - pixi install
     - pixi run lint
   tags:
@@ -40,6 +40,7 @@ test:
   stage: test
   script:
     - apt update && apt install -y git
+    - rm -f pixi.lock
     - pixi install
     - pixi run test-cov
   coverage: '/TOTAL.*\s+(\d+%)/'
@@ -56,20 +57,7 @@ test:
   tags:
     - linux
 
-# ===== TEST ALL (MANUAL) =====
-test-all:
-  image: ghcr.io/prefix-dev/pixi:latest
-  stage: test
-  script:
-    - apt update && apt install -y git
-    - pixi install
-    - pixi run test-all
-  tags:
-    - linux
-  when: manual
-  allow_failure: true
-
-# ===== PAGES (COVERAGE REPORT + BADGE) =====
+# ===== PAGES =====
 pages:
   image: ghcr.io/prefix-dev/pixi:latest
   stage: deploy
