@@ -26,7 +26,7 @@ lint:
   image: ghcr.io/prefix-dev/pixi:latest
   stage: test
   script:
-    - apt update && apt install -y git
+    - apt update && apt install -y git build-essential
     - rm -f pixi.lock
     - pixi install
     - pixi run lint
@@ -39,7 +39,7 @@ test:
   image: ghcr.io/prefix-dev/pixi:latest
   stage: test
   script:
-    - apt update && apt install -y git
+    - apt update && apt install -y git build-essential
     - rm -f pixi.lock
     - pixi install
     - pixi run test-cov
