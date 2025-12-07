@@ -1,67 +1,44 @@
 stages:
-  - lint
   - test
 
 variables:
-  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
-  PIXI_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pixi"
+  PRE_COMMIT_HOME: ${CI_PROJECT_DIR}/.cache/pre-commit
 
-# Cache pixi environments across jobs
-.pixi-cache: &pixi-cache
-  cache:
-    key: pixi-${CI_COMMIT_REF_SLUG}
-    paths:
-      - .pixi/
-      - .cache/
-
-# Base job template for pixi-based jobs
-.pixi-base:
-  image: python:3.12-slim
-  <<: *pixi-cache
-  before_script:
-    - apt-get update && apt-get install -y curl git
-    - curl -fsSL https://pixi.sh/install.sh | bash
-    - export PATH="$HOME/.pixi/bin:$PATH"
-    - pixi install
-
-# ------------------------------------------------------------------------------
-# Lint Stage
-# ------------------------------------------------------------------------------
-
+# ===== PRE-COMMIT =====
 pre-commit:
-  stage: lint
-  image: python:3.12-slim
-  cache:
-    key: pre-commit-${CI_COMMIT_REF_SLUG}
-    paths:
-      - .cache/pre-commit/
-  before_script:
-    - apt-get update && apt-get install -y git
-    - pip install pre-commit
-  script:
-    - pre-commit run --all-files
-  allow_failure: true  # Remove this line once pre-commit is fully configured
-
-lint:
-  stage: lint
-  extends: .pixi-base
-  script:
-    - pixi run lint
-  allow_failure: true  # pycodestyle warnings shouldn't block the pipeline
-
-# ------------------------------------------------------------------------------
-# Test Stage
-# ------------------------------------------------------------------------------
-
-test:
+  image: ghcr.io/prefix-dev/pixi:latest
   stage: test
-  extends: .pixi-base
   script:
-    - pixi run pytest tests -v --cov=wifa_uq --cov-report=term --cov-report=xml:coverage.xml --cov-report=html:htmlcov
-    #- pixi run pytest tests/unit -v --cov=wifa_uq --cov-report=term --cov-report=xml:coverage.xml --cov-report=html:htmlcov
+    - apt update && apt install -y git
+    - pixi run -e default pre-commit run --all-files
+  cache:
+    key: pre-commit-cache
+    paths:
+      - ${PRE_COMMIT_HOME}
+  tags:
+    - linux
+  allow_failure: true
+
+# ===== LINT =====
+lint:
+  image: ghcr.io/prefix-dev/pixi:latest
+  stage: test
+  script:
+    - apt update && apt install -y git
+    - pixi run lint
+  tags:
+    - linux
+  allow_failure: true
+
+# ===== TEST =====
+test:
+  image: ghcr.io/prefix-dev/pixi:latest
+  stage: test
+  script:
+    - apt update && apt install -y git
+    - pixi run test-cov
   coverage: '/TOTAL.*\s+(\d+%)/'
   artifacts:
-    when: always
     paths:
       - htmlcov/
       - coverage.xml
@@ -69,32 +46,41 @@ test:
       coverage_report:
         coverage_format: cobertura
         path: coverage.xml
+    when: always
     expire_in: 1 week
+  tags:
+    - linux
 
-# Generate coverage badge (stored as GitLab Pages or job artifact)
-pages:
+# ===== TEST ALL =====
+test-all:
+  image: ghcr.io/prefix-dev/pixi:latest
   stage: test
-  extends: .pixi-base
+  script:
+    - apt update && apt install -y git
+    - pixi run test-all
+  tags:
+    - linux
+  when: manual
+  allow_failure: true
+
+# ===== COVERAGE BADGE / PAGES =====
+pages:
+  image: ghcr.io/prefix-dev/pixi:latest
+  stage: test
   needs:
     - test
   script:
+    - apt update && apt install -y git
     - pip install coverage-badge --break-system-packages
-    - coverage-badge -o public/coverage.svg -f
     - mkdir -p public
+    - coverage-badge -o public/coverage.svg -f || true
     - cp -r htmlcov/* public/ || true
   artifacts:
     paths:
       - public
     expire_in: 30 days
+  tags:
+    - linux
   only:
     - main
     - master
-
-
-#test-all:
-#  stage: test
-#  extends: .pixi-base
-#  script:
-#    - pixi run test-all
-#  when: manual
-#  allow_failure: true
