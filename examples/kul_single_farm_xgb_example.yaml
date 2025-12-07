@@ -1,0 +1,101 @@
+# examples/single_farm_xgb_example.yaml
+#
+# Single-farm workflow using:
+#   - XGBoost for bias prediction
+#   - Local calibration with Linear regression
+#   - All available features
+#
+# This is a good starting point for most use cases.
+
+description: "Single-farm workflow with XGBoost and local linear calibration"
+
+paths:
+  # Input files (relative to this config file)
+  system_config: data/KUL_LES/wind_energy_system/system_pywake.yaml
+  reference_power: data/KUL_LES/observed_output/observedPowerKUL.nc
+  reference_resource: data/KUL_LES/plant_energy_resource/originalData.nc
+  wind_farm_layout: data/KUL_LES/plant_wind_farm/FLOW_UQ_vnv_toy_study_wind_farm.yaml
+
+  # Output locations
+  output_dir: results/KUL_LES_xgb/
+  processed_resource_file: processed_physical_inputs.nc
+  database_file: results_stacked_hh.nc
+
+preprocessing:
+  run: true
+  steps:
+    - recalculate_params  # Computes: ABL_height, wind_veer, lapse_rate, TI, etc.
+
+database_gen:
+  run: true
+  flow_model: pywake
+  n_samples: 100
+
+  # Parameters to sweep (these become calibration targets)
+  param_config:
+    attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b:
+      range: [0.01, 0.07]
+      default: 0.04
+      short_name: "k_b"
+    attributes.analysis.blockage_model.ss_alpha:
+      range: [0.75, 1.0]
+      default: 0.875
+      short_name: "ss_alpha"
+      attributes.analysis.wind_deficit_model.ceps:      # ← Different parameter
+        range: [0.15, 0.3]
+        default: 0.2154  # PyWake default for BastankhahGaussianDeficit
+        short_name: "ceps"
+
+error_prediction:
+  run: true
+
+  # All features available after preprocessing + database generation:
+  #
+  # From preprocessing (recalculate_params):
+  #   - ABL_height        : Atmospheric boundary layer height [m]
+  #   - wind_veer         : Change in wind direction with height [deg/m]
+  #   - lapse_rate        : Potential temperature gradient [K/m]
+  #
+  # From database_gen (layout-dependent):
+  #   - Blockage_Ratio    : Fraction of rotor area blocked by upstream turbines [0-1]
+  #   - Blocking_Distance : Normalized distance to blocking turbines [0-1]
+  #   - Farm_Length       : Farm extent in wind direction [rotor diameters]
+  #   - Farm_Width        : Farm extent perpendicular to wind [rotor diameters]
+  #
+  features:
+    - ABL_height
+    - wind_veer
+    - lapse_rate
+    - Blockage_Ratio
+    - Blocking_Distance
+    - Farm_Length
+    - Farm_Width
+
+  # XGBoost gradient boosting for bias prediction
+  model: "XGB"
+  model_params:
+    max_depth: 4
+    n_estimators: 200
+    learning_rate: 0.1
+    random_state: 42
+
+  # Local calibration: predicts optimal parameters per flow case
+  calibrator: LocalParameterPredictor
+  local_regressor: "Linear"  # Options: Linear, Ridge, Lasso, ElasticNet, RandomForest, XGB
+  local_regressor_params: {}  # Linear regression has no hyperparameters
+
+  bias_predictor: BiasPredictor
+
+  cross_validation:
+    run: true
+    splitting_mode: kfold_shuffled
+    n_splits: 5
+    metrics:
+      - rmse
+      - r2
+      - mae
+
+sensitivity_analysis:
+  # SHAP analysis for XGBoost (automatic for tree models)
+  run_observation_sensitivity: true
+  run_bias_sensitivity: true

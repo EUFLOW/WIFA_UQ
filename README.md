@@ -80,16 +80,40 @@ a config .yaml file is created to describe the workflow for a given case.
 
 the main.py script will interpret the config script and execute the workflow using the wifa_uq modules
 
-## Architecture Diagram
+## Architecture Diagrams
 ```
+
 ┌─────────────────────────────────────────────────────────────────┐
-│                        workflow.py                              │
+│                                                                 │
+│   Reference Data          Wake Model (e.g., PyWake/foxes/WAYVE) │
+│   (LES / SCADA)          with uncertain params                  │
+│        │                        │                               │
+│        │    ┌───────────────────┘                               │
+│        ▼    ▼                                                   │
+│   ┌──────────────┐                                              │
+│   │  Calibration │ → Find params that minimize bias             │
+│   └──────────────┘                                              │
+│           │                                                     │
+│           ▼                                                     │
+│   ┌──────────────┐                                              │
+│   │ Bias         │ → Learn: bias = f(ABL_height, wind_veer,...) │
+│   │ Prediction   │                                              │
+│   └──────────────┘                                              │
+│           │                                                     │
+│           ▼                                                     │
+│   Corrected Output = PyWake(calibrated) - predicted_bias        │
+│                                                                 │
+│   Result: Lower error on held-out test cases                    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐   │
-│  │ Preprocessing │───▶│  Database    │───▶│ Error Prediction│   │
+│  │ Preprocessing│───▶│  Database    │───▶│ Error Prediction │   │
 │  │              │    │  Generation  │    │                  │   │
-│  └──────────────┘    └──────────────┘    └────────┬─────────┘   │
+│  └──────────────┘    └──────────────┘    └─────────┬────────┘   │
 │                                                    │            │
 │                      ┌─────────────────────────────┼────────┐   │
 │                      │                             ▼        │   │
