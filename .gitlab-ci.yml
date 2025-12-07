@@ -28,6 +28,7 @@ lint:
   stage: test
   script:
     - apt update && apt install -y git
+    - pixi install
     - pixi run lint
   tags:
     - linux
@@ -39,6 +40,7 @@ test:
   stage: test
   script:
     - apt update && apt install -y git
+    - pixi install
     - pixi run test-cov
   coverage: '/TOTAL.*\s+(\d+%)/'
   artifacts:
@@ -60,6 +62,7 @@ test-all:
   stage: test
   script:
     - apt update && apt install -y git
+    - pixi install
     - pixi run test-all
   tags:
     - linux
