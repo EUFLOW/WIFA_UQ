@@ -19,7 +19,6 @@ pre-commit:
       - ${PRE_COMMIT_HOME}
   tags:
     - linux
-  allow_failure: true
 
 # ===== LINT =====
 lint:
@@ -32,7 +31,6 @@ lint:
     - pixi run lint
   tags:
     - linux
-  allow_failure: true
 
 # ===== TEST =====
 test:
