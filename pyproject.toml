@@ -63,6 +63,7 @@ dev = [
     "ncplot",
     "nctoolkit",
     "cartopy",
+    "openturns",
 ]
 
 [project.urls]
@@ -75,7 +76,7 @@ exclude = ["notebooks", "examples", "tests", "docs", "recipe", "results", "outpu
 
 [tool.pixi.project]
 channels = ["conda-forge"]
-platforms = ["osx-arm64"]
+platforms = ["osx-arm64", "linux-64"]
 
 [tool.pixi.dependencies]
 python = "~=3.12.0"
@@ -87,6 +88,8 @@ shap = ">=0.48.0,<0.49"
 llvmlite = ">=0.45.1,<0.46"
 numba = ">=0.62.1,<0.63"
 numpy = "*"
+openturns = ">=1.26,<2"
+pytest = ">=9.0.1,<10"
 
 [tool.pixi.pypi-dependencies]
 wifa_uq = { path = ".", editable = true }
@@ -97,3 +100,8 @@ dev = { features = ["dev"], solve-group = "default" }
 test = { features = ["test"], solve-group = "default" }
 
 [tool.pixi.tasks]
+install-devcat = "cargo install --git https://github.com/kilojoules/devcat"
+test = "pytest tests/unit -v"
+test-cov = "pytest tests/unit -v --cov=wifa_uq --cov-report=term --cov-report=html"
+test-all = "pytest tests/ -v"
+lint = "pycodestyle wifa_uq --max-line-length=120 --ignore=E501,W503"

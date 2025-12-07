@@ -18,14 +18,13 @@ attributes:
     flow_field:
       report: False
       flow_nc_filename: flow_field.nc
-    
+
       output_variables: ['wind_speed', 'wind_direction','tke']
       z_planes:
         z_sampling: "hub_heights"
         xy_sampling: "original_grid"
     #
-    
 
-output:
-  
+
+simulation_output:
   turbine_data: !include turbine_data.nc

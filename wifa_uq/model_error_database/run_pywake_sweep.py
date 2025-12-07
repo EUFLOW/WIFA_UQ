@@ -1,11 +1,10 @@
 import numpy as np
 import xarray as xr
-from typing import Dict, List, Union, Tuple
-from windIO.yaml import load_yaml 
+from typing import Dict, List
+from windIO.yaml import load_yaml
 import time
 from pathlib import Path
 from wifa.pywake_api import run_pywake
-import os
 import json
 
 
@@ -15,22 +14,23 @@ def set_nested_dict_value(d: dict, path: List[str], value: float) -> None:
     for key in path[:-1]:
         current = current[key]
     current[path[-1]] = value
-  
-def create_parameter_samples(param_config: Dict[str, dict], n_samples: int, 
-                             seed: int = None) -> Dict[str, np.ndarray]:
+
+
+def create_parameter_samples(
+    param_config: Dict[str, dict], n_samples: int, seed: int = None
+) -> Dict[str, np.ndarray]:
     """
     Create samples for multiple parameters based on their ranges.
-    
+
     Args:
         param_config: Dictionary mapping parameter paths to (min, max) tuples
         n_samples: Number of samples to generate
         seed: Random seed for reproducibility
-    
+
     Returns:
         Dictionary mapping parameter paths to arrays of samples
     """
 
-    
     if seed is not None:
         np.random.seed(seed)
 
@@ -38,15 +38,24 @@ def create_parameter_samples(param_config: Dict[str, dict], n_samples: int,
     for param_path, config in param_config.items():
         min_val, max_val = config["range"]
         samples[param_path] = np.random.uniform(min_val, max_val, n_samples)
-        
+
         # First sample is always the default (for baseline comparison)
         if "default" in config:
             samples[param_path][0] = config["default"]
 
     return samples
 
-def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, dict], reference_power: dict, 
-              reference_physical_inputs: dict,n_samples: int = 100, seed: int = None, output_dir='cases/default/pywake_sampling/') -> List[xr.Dataset]:
+
+def run_parameter_sweep(
+    turb_rated_power,
+    dat: dict,
+    param_config: Dict[str, dict],
+    reference_power: dict,
+    reference_physical_inputs: dict,
+    n_samples: int = 100,
+    seed: int = None,
+    output_dir="cases/default/pywake_sampling/",
+) -> List[xr.Dataset]:
     """
     run the pywake api for a range of ṕarameter samples
     compare reference power to pywake power
@@ -59,9 +68,9 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, dict
         dat: windIO system dat file
         param_config: specifying which parameters to sample from and ranges of values
         reference_power: xarray with the power values from the reference simulation
-        reference_physical_inputs: xarray with physical inputs to the reference simulations 
+        reference_physical_inputs: xarray with physical inputs to the reference simulations
         n_samples: number of parameter samples
-        seed: random seed for generating parameter samples 
+        seed: random seed for generating parameter samples
 
     """
 
@@ -70,33 +79,33 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, dict
     sample_coords = np.arange(n_samples, dtype=np.float64)
     flow_case_coords = np.arange(n_flow_cases, dtype=np.float64)
 
-    bias_cap=np.zeros((n_samples, n_flow_cases), dtype=np.float64)
-    pw=np.zeros((n_samples, n_flow_cases), dtype=np.float64)
-    ref=np.zeros((n_samples, n_flow_cases), dtype=np.float64)
+    bias_cap = np.zeros((n_samples, n_flow_cases), dtype=np.float64)
+    pw = np.zeros((n_samples, n_flow_cases), dtype=np.float64)
+    ref = np.zeros((n_samples, n_flow_cases), dtype=np.float64)
 
     # Run the first sample with specific (default) samples
 
-    for i in range(n_samples):  
+    for i in range(n_samples):
         # Update all parameters for this sample
         for param_path, param_samples in samples.items():
             # Convert string path to list of keys
-            path = param_path.split('.')
+            path = param_path.split(".")
             set_nested_dict_value(dat, path, param_samples[i])
-        
-        sample_dir = f'{output_dir}/sample_{i}'
-        
+
+        sample_dir = f"{output_dir}/sample_{i}"
+
         # Run simulation
         run_pywake(dat, output_dir=sample_dir)
-  
+
         # Process results (in terms of power)
         pw_power = xr.open_dataset("results/turbine_data.nc").power.values
 
-        ref_power = reference_power.power.values  
-            # workaround for some cases
+        ref_power = reference_power.power.values
+        # workaround for some cases
         if ref_power.shape == (pw_power.shape[1], pw_power.shape[0]):
             ref_power = ref_power.T
 
-        model_err=pw_power-ref_power
+        model_err = pw_power - ref_power
         # # in case there are nan reference values (relevant for scada)
         # masked_model_err = np.ma.masked_array(model_err, mask=np.isnan(ref_power))
 
@@ -110,15 +119,14 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, dict
         """
 
         # calculating farm level bias
-        model_bias_cap=np.nanmean(model_err, axis=0)/turb_rated_power
+        model_bias_cap = np.nanmean(model_err, axis=0) / turb_rated_power
 
         # Fill pre-allocated arrays for all samples
         bias_cap[i, :] = model_bias_cap
         # pywake power (farm average)
-        pw[i, :] = np.nanmean(pw_power, axis=0)/turb_rated_power
+        pw[i, :] = np.nanmean(pw_power, axis=0) / turb_rated_power
         # reference power (farm average)
-        ref[i, :] = np.nanmean(ref_power, axis=0)/turb_rated_power
-
+        ref[i, :] = np.nanmean(ref_power, axis=0) / turb_rated_power
 
     # Build parameter coordinates: one coordinate per swept parameter
     param_coords = {}
@@ -127,17 +135,15 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, dict
         short_name = cfg.get("short_name", param_path.split(".")[-1])
 
         param_coords[short_name] = xr.DataArray(
-            param_samples,
-            dims=["sample"],
-            coords={"sample": sample_coords}
+            param_samples, dims=["sample"], coords={"sample": sample_coords}
         )
 
     # Build dataset directly from NumPy arrays (bias_cap, pw, ref)
     merged_data = xr.Dataset(
         data_vars={
             "model_bias_cap": (("sample", "flow_case"), bias_cap),
-            "pw_power_cap":   (("sample", "flow_case"), pw),
-            "ref_power_cap":  (("sample", "flow_case"), ref),
+            "pw_power_cap": (("sample", "flow_case"), pw),
+            "ref_power_cap": (("sample", "flow_case"), ref),
         },
         coords={
             "sample": sample_coords,
@@ -151,36 +157,52 @@ def run_parameter_sweep(turb_rated_power,dat: dict, param_config: Dict[str, dict
         param_config[p]["short_name"] for p in param_config.keys()
     ]
     merged_data.attrs["param_paths"] = list(param_config.keys())
-    merged_data.attrs['param_defaults'] = json.dumps({
-      param_config[p]["short_name"]: param_config[p].get("default")
-      for p in param_config.keys()
-      })
+    merged_data.attrs["param_defaults"] = json.dumps(
+        {
+            param_config[p]["short_name"]: param_config[p].get("default")
+            for p in param_config.keys()
+        }
+    )
 
     return merged_data
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     # Example usage:
     param_config = {
-        "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": (0.01, 0.3),
-        "attributes.analysis.blockage_model.ss_alpha": (0.75, 1.25)
+        "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": (
+            0.01,
+            0.3,
+        ),
+        "attributes.analysis.blockage_model.ss_alpha": (0.75, 1.25),
     }
 
     # navigating to a file containing metadata required to run pywake api
-    case="HR1"
-    meta_file=f"EDF_datasets/{case}/meta.yaml"
-    meta=load_yaml(Path(meta_file))
+    case = "HR1"
+    meta_file = f"EDF_datasets/{case}/meta.yaml"
+    meta = load_yaml(Path(meta_file))
 
     print(f"metadata for flow case: {meta}")
-    
+
     dat = load_yaml(Path(f"EDF_datasets/{case}/{meta['system']}"))
-    reference_physical_inputs = xr.load_dataset(f"EDF_datasets/{case}/{meta['ref_resource']}")
-    turb_rated_power=meta['rated_power']
-    reference_power=xr.load_dataset(f"EDF_datasets/{case}/{meta['ref_power']}")
-    output_dir=f"EDF_datasets/{case}/pywake_samples"
+    reference_physical_inputs = xr.load_dataset(
+        f"EDF_datasets/{case}/{meta['ref_resource']}"
+    )
+    turb_rated_power = meta["rated_power"]
+    reference_power = xr.load_dataset(f"EDF_datasets/{case}/{meta['ref_power']}")
+    output_dir = f"EDF_datasets/{case}/pywake_samples"
 
     start = time.time()
     print(f"Output directory to save results: {output_dir}")
-    results = run_parameter_sweep(turb_rated_power,dat,param_config,reference_power,reference_physical_inputs, n_samples=10, seed=3,output_dir=Path(output_dir))
+    results = run_parameter_sweep(
+        turb_rated_power,
+        dat,
+        param_config,
+        reference_power,
+        reference_physical_inputs,
+        n_samples=10,
+        seed=3,
+        output_dir=Path(output_dir),
+    )
     print("Time taken for parameter sweep:", time.time() - start)
-    results.to_netcdf('results.nc')
+    results.to_netcdf("results.nc")

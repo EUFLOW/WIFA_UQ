@@ -1,6 +1,6 @@
 general_requ:
-  title: Nysted wind farm simulations for sensitivity to wind speed and wind direction with code_saturne: wind speed = 8 m/s
-  notes: Simulations of the Nysted wind farm for sensitivity to wind speed and wind direction using code_saturne for 21 wind directions and wind speed = 8 m/s
+  title: "Nysted wind farm simulations for sensitivity to wind speed and wind direction with code_saturne: wind speed = 8 m/s"
+  notes: "Simulations of the Nysted wind farm for sensitivity to wind speed and wind direction using code_saturne for 21 wind directions and wind speed = 8 m/s"
   license_name: Creative Commons Attribution 4.0 International
   owner_org_name: Electricite De France (EDF)
   url: null

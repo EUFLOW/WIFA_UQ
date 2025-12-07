@@ -5,6 +5,7 @@ from netCDF4 import Dataset
 # Path to the NetCDF file
 FILE_PATH = "single_time_flow_field_interpolated.nc"
 
+
 def plot_wind_speed(case_number):
     """
     Plot the wind speed map for a given case number.
@@ -28,7 +29,7 @@ def plot_wind_speed(case_number):
 
     # Plot the wind speed map
     plt.figure(figsize=(10, 6))
-    contour = plt.contourf(X, Y, wind_speed_case, levels=1000, cmap='turbo')
+    contour = plt.contourf(X, Y, wind_speed_case, levels=1000, cmap="turbo")
     plt.colorbar(contour, label="Wind Speed (m/s)")
     plt.title(f"Wind Speed for Case {case_number}")
     plt.xlabel("X (m)")
@@ -40,6 +41,6 @@ def plot_wind_speed(case_number):
 
 
 if __name__ == "__main__":
-        # Example usage: plot wind speed for case number 5
+    # Example usage: plot wind speed for case number 5
     case_number = 0  # You can change this value to plot a different case
     plot_wind_speed(case_number)

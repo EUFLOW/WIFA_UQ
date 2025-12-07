@@ -15,7 +15,7 @@ The actual ABL heights are derived from the simulation data, and these heights a
 
 - **Wind Speed** [m/s] **: [8, 10.5]
 - **Turbine**: IEA15MW, hub height = 150m and D = 240m
-- **TI** at hub height is derived from the code_saturne simulation and specified in the 1WT_calibration_data_IEA15MW.nc file.  
+- **TI** at hub height is derived from the code_saturne simulation and specified in the 1WT_calibration_data_IEA15MW.nc file.
 
 ## NetCDF Files
 
@@ -29,7 +29,7 @@ There are two NetCDF files for data results:
 
 This directory contains the vertical profiles of velocity, temperature, and turbulence for all cases, which are used as inlet conditions for the code_saturne simulation.
 
-## Plot Profiles : 
+## Plot Profiles :
 
 `PlotProfiles_from_flowfield.py`
 """To plot the longitudinal profile at y=0 and transversal profiles for x=5D,10D and 15D for a given case number from unstructure grid """
@@ -46,7 +46,7 @@ This directory contains the vertical profiles of velocity, temperature, and turb
 
 `Plot2Dmap_from_interpolated_flowfield.py`
 """ Plot flow map from interpolated field """"
-   - Set the Case Number 
+   - Set the Case Number
 
 ## Remarks
 

@@ -1,13 +1,13 @@
-""" Base class for a postprocessing block. """
+"""Base class for a postprocessing block."""
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+
 
 class PostProcesser(ABC):
     """
     Base class for a postprocessing block.
     """
-    
+
     @abstractmethod
     def fit(self):
         pass
@@ -15,4 +15,3 @@ class PostProcesser(ABC):
     @abstractmethod
     def predict(self):
         pass
-    

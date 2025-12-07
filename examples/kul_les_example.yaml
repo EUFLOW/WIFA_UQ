@@ -8,7 +8,7 @@ paths:
   reference_power: data/KUL_LES/observed_output/observedPowerKUL.nc
   reference_resource: data/KUL_LES/plant_energy_resource/originalData.nc
   wind_farm_layout: data/KUL_LES/plant_wind_farm/FLOW_UQ_vnv_toy_study_wind_farm.yaml
-  
+
   # --- Define output locations ---
   output_dir: data/KUL_LES/wifa_uq_results # All results will be saved here
   processed_resource_file: "processed_physical_inputs.nc" # Will be saved in output_dir
@@ -17,7 +17,7 @@ paths:
 # --- Preprocessing now operates on the files above ---
 preprocessing:
   run: true
-  steps: [recalculate_params] 
+  steps: [recalculate_params]
 
 # --- DB Gen now just defines parameters ---
 database_gen:
@@ -28,10 +28,10 @@ database_gen:
       range: [0.01, 0.07]
       default: 0.04           # ← Default value for baseline comparison
       short_name: "k_b"       # ← Name used in database coordinates
-    attributes.analysis.blockage_model.ss_alpha:
-      range: [0.75, 1.0]
-      default: 0.875
-      short_name: "ss_alpha"
+    attributes.analysis.wind_deficit_model.ceps:
+      range: [0.15, 0.3]
+      default: 0.2154  # PyWake default for BastankhahGaussianDeficit
+      short_name: "ceps"
   n_samples: 100
 
 # --- Error Prediction ---
@@ -41,8 +41,18 @@ error_prediction:
     - ABL_height
     - wind_veer
     - lapse_rate
-  model: "SIRPolynomial"
+  model: "PCE"
+  model_params:
+    degree: 5                  # PCE polynomial degree
+    marginals: "kernel"        # "kernel", "uniform", "normal"
+    copula: "independent"      # "independent" or "normal"
+    q: 0.5                     # hyperbolic truncation parameter
+    max_features: 5            # safety limit
+    allow_high_dim: false      # refuse > 5 inputs unless set true
   calibrator: LocalParameterPredictor
+  local_regressor: "Ridge"  # Options: RandomForest, Linear, Ridge, Lasso, ElasticNet, XGB
+  local_regressor_params:
+    alpha: 1.0
   bias_predictor: BiasPredictor
   cross_validation:
     run: true

@@ -1,6 +1,6 @@
 general_requ:
-  title: Horns Rev wind farm simulations for sensitivity to boundary layer height and wind direction with code_saturne: H=800m
-  notes: Simulations of the Horns Rev wind farm for sensitivity to boundary layer height and wind direction using code_saturne for 7 wind directions and a boundary layer height  H=800m
+  title: "Horns Rev wind farm simulations for sensitivity to boundary layer height and wind direction with code_saturne: H=800m"
+  notes: "Simulations of the Horns Rev wind farm for sensitivity to boundary layer height and wind direction using code_saturne for 7 wind directions and a boundary layer height  H=800m"
   license_name: Creative Commons Attribution 4.0 International
   owner_org_name: Electricite De France (EDF)
   url: null

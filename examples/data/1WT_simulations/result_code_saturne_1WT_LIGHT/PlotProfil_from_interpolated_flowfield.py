@@ -30,7 +30,7 @@ for x_pos in x_positions:
     wind_speed_profile = wind_speed_case[x_index, :]
 
     plt.figure(figsize=(10, 6))
-    plt.plot(y, wind_speed_profile, '+', label=f"x = {x_pos} m")
+    plt.plot(y, wind_speed_profile, "+", label=f"x = {x_pos} m")
 
     # Set plot title and labels
     plt.title(f"Wind Speed Profile at x = {x_pos} m for Case {specific_case_index + 1}")
@@ -44,7 +44,7 @@ y_index = np.abs(y - 0).argmin()  # Find the index closest to y = 0
 wind_speed_profile_y0 = wind_speed_case[:, y_index]
 
 plt.figure(figsize=(10, 6))
-plt.plot(x, wind_speed_profile_y0, '+', label="y = 0 m")
+plt.plot(x, wind_speed_profile_y0, "+", label="y = 0 m")
 
 # Set plot title and labels
 plt.title(f"Wind Speed Profile at y = 0 m for Case {specific_case_index + 1}")
