@@ -1,3 +1,10 @@
+"""
+WIFA-UQ Workflow Orchestrator.
+
+Supports both single-farm and multi-farm configurations with automatic
+path inference from windIO system configs.
+"""
+
 import yaml
 import xarray as xr
 from pathlib import Path
@@ -6,6 +13,10 @@ from sklearn.preprocessing import StandardScaler
 import xgboost as xgb
 import numpy as np
 
+from wifa_uq.model_error_database.path_inference import (
+    infer_paths_from_system_config,
+    validate_required_paths,
+)
 from wifa_uq.model_error_database.multi_farm_gen import generate_multi_farm_database
 from wifa_uq.preprocessing.preprocessing import PreprocessingInputs
 from wifa_uq.postprocessing.error_predictor.error_predictor import PCERegressor
@@ -88,23 +99,17 @@ def build_predictor_pipeline(model_name: str, model_params: dict | None = None):
 
     elif model_name == "SIRPolynomial":
         print("Building SIR+Polynomial Regressor pipeline...")
-        # Note: SIRPolynomialRegressor includes its own scaling
         pipeline = SIRPolynomialRegressor(n_directions=1, degree=2)
         model_type = "sir"
 
     elif model_name == "PCE":
         print("Building PCE Regressor pipeline...")
-
-        # model_params come directly from YAML (error_prediction.model_params)
-        # They are passed as kwargs to PCERegressor, e.g.:
-        #   degree, marginals, copula, q, max_features, allow_high_dim
-
         pipeline = PCERegressor(**model_params)
         model_type = "pce"
     else:
         raise ValueError(
             f"Unknown model '{model_name}' in config. "
-            f"Available models are: ['XGB', 'SIRPolynomial', 'PCE']"
+            f"Available models are: ['XGB', 'SIRPolynomial', 'PCE', 'Linear']"
         )
     return pipeline, model_type
 
@@ -112,6 +117,71 @@ def build_predictor_pipeline(model_name: str, model_params: dict | None = None):
 def _is_multi_farm_config(config: dict) -> bool:
     """Check if config specifies multiple farms."""
     return "farms" in config.get("paths", {}) or "farms" in config
+
+
+def _resolve_paths_from_config(paths_config: dict, base_dir: Path) -> dict[str, Path]:
+    """
+    Resolve paths from config, using smart inference when paths are not explicit.
+
+    This is the unified path resolution logic for both single-farm and multi-farm.
+
+    Args:
+        paths_config: The 'paths' section of the config
+        base_dir: Base directory for relative paths (usually config file's parent)
+
+    Returns:
+        Dict with resolved Path objects for:
+            - system_config
+            - reference_power
+            - reference_resource
+            - wind_farm_layout
+            - output_dir
+            - processed_resource_file (name only)
+            - database_file (name only)
+    """
+    # system_config is always required
+    if "system_config" not in paths_config:
+        raise ValueError(
+            "Config must specify 'paths.system_config'. "
+            "Other paths can be inferred from the windIO structure."
+        )
+
+    system_config_path = base_dir / paths_config["system_config"]
+
+    # Build explicit paths dict (only include paths that are actually specified)
+    explicit_paths = {}
+    for key in ["reference_power", "reference_resource", "wind_farm_layout"]:
+        if key in paths_config and paths_config[key] is not None:
+            explicit_paths[key] = base_dir / paths_config[key]
+
+    # Use smart inference (explicit paths override inferred ones)
+    print(f"Resolving paths from system_config: {system_config_path.name}")
+    resolved = infer_paths_from_system_config(
+        system_config_path=system_config_path,
+        explicit_paths=explicit_paths,
+    )
+
+    # Validate that all required paths exist
+    validate_required_paths(resolved)
+
+    # Print what we found
+    print("Resolved paths:")
+    for key, path in resolved.items():
+        source = "explicit" if key in explicit_paths else "inferred"
+        print(f"  {key}: {path.name} ({source})")
+
+    # Add output paths (these are always explicit or have defaults)
+    resolved["output_dir"] = base_dir / paths_config.get(
+        "output_dir", "wifa_uq_results"
+    )
+    resolved["processed_resource_file"] = paths_config.get(
+        "processed_resource_file", "processed_physical_inputs.nc"
+    )
+    resolved["database_file"] = paths_config.get(
+        "database_file", "results_stacked_hh.nc"
+    )
+
+    return resolved
 
 
 def _validate_farm_configs(farms: list[dict]) -> None:
@@ -126,7 +196,6 @@ def _validate_farm_configs(farms: list[dict]) -> None:
     names_seen = set()
 
     for i, farm in enumerate(farms):
-        # Check required keys
         missing = required_keys - set(farm.keys())
         if missing:
             raise ValueError(
@@ -134,7 +203,6 @@ def _validate_farm_configs(farms: list[dict]) -> None:
                 f"Each farm must have 'name' and 'system_config'."
             )
 
-        # Check for duplicate names
         name = farm["name"]
         if name in names_seen:
             raise ValueError(
@@ -147,29 +215,26 @@ def _validate_farm_configs(farms: list[dict]) -> None:
 
 def _resolve_farm_paths(farm_config: dict, base_dir: Path) -> dict:
     """
-    Resolve relative paths in a farm config to absolute paths.
+    Resolve paths for a single farm in multi-farm mode.
 
-    Required keys:
-      - name: Farm identifier (passed through as-is)
-      - system_config: Path to wind energy system YAML
-
-    Optional keys (for explicit path overrides):
-      - reference_power: Path to reference power NetCDF
-      - reference_resource: Path to reference resource NetCDF
-      - wind_farm_layout: Path to wind farm layout YAML
+    Uses the same smart inference as single-farm mode.
     """
-    resolved = {"name": farm_config["name"]}
+    system_config_path = base_dir / farm_config["system_config"]
 
-    path_keys = [
-        "system_config",
-        "reference_power",
-        "reference_resource",
-        "wind_farm_layout",
-    ]
+    # Build explicit paths dict
+    explicit_paths = {}
+    for key in ["reference_power", "reference_resource", "wind_farm_layout"]:
+        if key in farm_config and farm_config[key] is not None:
+            explicit_paths[key] = base_dir / farm_config[key]
 
-    for key in path_keys:
-        if key in farm_config:
-            resolved[key] = base_dir / farm_config[key]
+    # Use smart inference
+    resolved = infer_paths_from_system_config(
+        system_config_path=system_config_path,
+        explicit_paths=explicit_paths,
+    )
+
+    # Add farm name
+    resolved["name"] = farm_config["name"]
 
     return resolved
 
@@ -179,6 +244,19 @@ def run_workflow(config_path: str | Path):
     Runs the full WIFA-UQ workflow from a configuration file.
 
     Supports both single-farm and multi-farm configurations.
+
+    Path Resolution:
+        Only 'system_config' is required. Other paths (reference_power,
+        reference_resource, wind_farm_layout) can be:
+        - Specified explicitly in the config (for full control)
+        - Inferred automatically from the windIO system structure
+
+    Example minimal config:
+        paths:
+          system_config: wind_energy_system.yaml
+          output_dir: results/
+
+        # Other paths will be auto-detected from windIO !include directives
     """
     config_path = Path(config_path).resolve()
     with open(config_path, "r") as f:
@@ -197,22 +275,24 @@ def run_workflow(config_path: str | Path):
 
 def _run_single_farm_workflow(config: dict, base_dir: Path):
     """
-    Original single-farm workflow (existing implementation).
+    Single-farm workflow with smart path inference.
     """
-    # --- 0. Resolve Paths ---
+    # --- 0. Resolve Paths (with smart inference) ---
     paths_config = config["paths"]
-    system_yaml_path = base_dir / paths_config["system_config"]
-    ref_power_path = base_dir / paths_config["reference_power"]
-    ref_resource_path = base_dir / paths_config["reference_resource"]
-    wf_layout_path = base_dir / paths_config["wind_farm_layout"]
+    resolved_paths = _resolve_paths_from_config(paths_config, base_dir)
 
-    output_dir = base_dir / paths_config["output_dir"]
+    system_yaml_path = resolved_paths["system_config"]
+    ref_power_path = resolved_paths["reference_power"]
+    ref_resource_path = resolved_paths["reference_resource"]
+    wf_layout_path = resolved_paths["wind_farm_layout"]
+
+    output_dir = resolved_paths["output_dir"]
     output_dir.mkdir(parents=True, exist_ok=True)
-    processed_resource_path = output_dir / paths_config["processed_resource_file"]
-    database_path = output_dir / paths_config["database_file"]
+    processed_resource_path = output_dir / resolved_paths["processed_resource_file"]
+    database_path = output_dir / resolved_paths["database_file"]
 
-    print(f"Resolved output directory: {output_dir}")
-    print("Running in SINGLE-FARM mode")
+    print(f"\nOutput directory: {output_dir}")
+    print("Running in SINGLE-FARM mode\n")
 
     # === 1. PREPROCESSING STEP ===
     if config["preprocessing"]["run"]:
@@ -223,7 +303,7 @@ def _run_single_farm_workflow(config: dict, base_dir: Path):
             steps=config["preprocessing"].get("steps", []),
         )
         preprocessor.run_pipeline()
-        print("Preprocessing complete.")
+        print("Preprocessing complete.\n")
     else:
         print("--- Skipping Preprocessing (as per config) ---")
         processed_resource_path = ref_resource_path
@@ -231,7 +311,7 @@ def _run_single_farm_workflow(config: dict, base_dir: Path):
             raise FileNotFoundError(
                 f"Input resource file not found: {processed_resource_path}"
             )
-        print(f"Using raw resource file: {processed_resource_path.name}")
+        print(f"Using raw resource file: {processed_resource_path.name}\n")
 
     # === 2. DATABASE GENERATION STEP ===
     if config["database_gen"]["run"]:
@@ -249,7 +329,7 @@ def _run_single_farm_workflow(config: dict, base_dir: Path):
             model=config["database_gen"]["flow_model"],
         )
         database = db_generator.generate_database()
-        print("Database generation complete.")
+        print("Database generation complete.\n")
     else:
         print("--- Loading Existing Database (as per config) ---")
         if not database_path.exists():
@@ -258,7 +338,7 @@ def _run_single_farm_workflow(config: dict, base_dir: Path):
                 "Set 'database_gen.run = true' to generate it."
             )
         database = xr.load_dataset(database_path)
-        print(f"Database loaded from {database_path}")
+        print(f"Database loaded from {database_path}\n")
 
     # Continue with error prediction...
     return _run_error_prediction(config, database, output_dir)
@@ -266,7 +346,7 @@ def _run_single_farm_workflow(config: dict, base_dir: Path):
 
 def _run_multi_farm_workflow(config: dict, base_dir: Path):
     """
-    Multi-farm workflow - processes multiple farms and combines results.
+    Multi-farm workflow with smart path inference for each farm.
     """
     paths_config = config.get("paths", {})
 
@@ -285,20 +365,30 @@ def _run_multi_farm_workflow(config: dict, base_dir: Path):
     database_filename = paths_config.get("database_file", "results_stacked_hh.nc")
     database_path = output_dir / database_filename
 
-    print(f"Resolved output directory: {output_dir}")
-    print(f"Running in MULTI-FARM mode with {len(farms_config)} farms")
+    print(f"Output directory: {output_dir}")
+    print(f"Running in MULTI-FARM mode with {len(farms_config)} farms\n")
 
-    # Resolve paths for each farm
-    resolved_farms = [_resolve_farm_paths(farm, base_dir) for farm in farms_config]
+    # Resolve paths for each farm (using smart inference)
+    resolved_farms = []
+    print("Resolving farm paths:")
+    for farm in farms_config:
+        print(f"\n  Farm: {farm['name']}")
+        try:
+            resolved = _resolve_farm_paths(farm, base_dir)
+            resolved_farms.append(resolved)
+            print(f"    system_config: {resolved['system_config'].name}")
+            print(f"    reference_power: {resolved['reference_power'].name}")
+            print(f"    reference_resource: {resolved['reference_resource'].name}")
+            print(f"    wind_farm_layout: {resolved['wind_farm_layout'].name}")
+        except FileNotFoundError as e:
+            print(f"    ERROR: {e}")
+            raise
 
-    # Print farm summary
-    print("\nFarms to process:")
-    for farm in resolved_farms:
-        print(f"  - {farm['name']}: {farm['system_config']}")
+    print(f"\nSuccessfully resolved paths for {len(resolved_farms)} farms\n")
 
     # === DATABASE GENERATION ===
     if config["database_gen"]["run"]:
-        print("\n--- Running Multi-Farm Database Generation ---")
+        print("--- Running Multi-Farm Database Generation ---")
 
         database = generate_multi_farm_database(
             farm_configs=resolved_farms,
@@ -311,7 +401,7 @@ def _run_multi_farm_workflow(config: dict, base_dir: Path):
             run_preprocessing=config["preprocessing"].get("run", True),
         )
 
-        print("Multi-farm database generation complete.")
+        print("Multi-farm database generation complete.\n")
     else:
         print("--- Loading Existing Database ---")
         if not database_path.exists():
@@ -321,7 +411,7 @@ def _run_multi_farm_workflow(config: dict, base_dir: Path):
             )
         database = xr.load_dataset(database_path)
         print(f"Database loaded from {database_path}")
-        print(f"Contains {len(np.unique(database.wind_farm.values))} farms")
+        print(f"Contains {len(np.unique(database.wind_farm.values))} farms\n")
 
     # Continue with error prediction...
     return _run_error_prediction(config, database, output_dir)
@@ -390,7 +480,7 @@ def _run_error_prediction(config: dict, database: xr.Dataset, output_dir: Path):
             local_regressor_params=err_config.get("local_regressor_params", {}),
         )
 
-        print("--- Cross-Validation Results (mean) ---")
+        print("\n--- Cross-Validation Results (mean) ---")
         print(cv_df.mean())
 
         # Save results
@@ -400,10 +490,10 @@ def _run_error_prediction(config: dict, database: xr.Dataset, output_dir: Path):
             y_preds=np.array(y_preds, dtype=object),
             y_tests=np.array(y_tests, dtype=object),
         )
-        print(f"Results saved to {output_dir}")
+        print(f"\nResults saved to {output_dir}")
 
-        print("--- Workflow complete ---")
+        print("\n--- Workflow complete ---")
         return cv_df, y_preds, y_tests
 
-    print("--- Workflow complete (no error prediction) ---")
+    print("\n--- Workflow complete (no error prediction) ---")
     return None, None, None
