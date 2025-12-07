@@ -3,6 +3,7 @@ stages:
 
 variables:
   PRE_COMMIT_HOME: ${CI_PROJECT_DIR}/.cache/pre-commit
+  PIXI_PLATFORM: linux-64
 
 # ===== PRE-COMMIT =====
 pre-commit:
