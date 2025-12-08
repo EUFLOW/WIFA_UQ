@@ -20,5 +20,5 @@ attributes:
     flow_field:
       report: False
 
-simulation_outputs:
+simulation_output:
   !include ../observed_output/simulation_outputs.yaml

@@ -8,9 +8,9 @@ attributes:
 
   model_outputs_specification:
     output_folder: "results"
-    cases_run:
-      all_occurences: True
-      subset: [88]
+    run_configuration:
+      times_run:
+        all_occurences: True
     turbine_outputs:
       turbine_nc_filename: 'turbine_data.nc' # dimension = time, turbine
       output_variables: ['power', 'rotor_effective_velocity'] #'frequency'
