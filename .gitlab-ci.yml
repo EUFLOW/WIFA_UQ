@@ -22,7 +22,7 @@ test:
   image: ghcr.io/prefix-dev/pixi:latest
   stage: test
   script:
-    - apt update && apt install -y git build-essential
+    - apt update && apt install -y git build-essential python3-pip
     - rm -f pixi.lock
     - pixi install
     - pixi run test-cov
