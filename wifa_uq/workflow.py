@@ -206,12 +206,34 @@ def _run_single_farm_workflow(config: dict, base_dir: Path):
     """
     Original single-farm workflow (existing implementation).
     """
+    from wifa_uq.model_error_database.path_inference import (
+        infer_paths_from_system_config,
+        validate_required_paths,
+    )
+
     # --- 0. Resolve Paths ---
     paths_config = config["paths"]
     system_yaml_path = base_dir / paths_config["system_config"]
-    ref_power_path = base_dir / paths_config["reference_power"]
-    ref_resource_path = base_dir / paths_config["reference_resource"]
-    wf_layout_path = base_dir / paths_config["wind_farm_layout"]
+
+    # Build explicit paths dict for any paths that were provided
+    explicit_paths = {}
+    for key in ["reference_power", "reference_resource", "wind_farm_layout"]:
+        if key in paths_config and paths_config[key] is not None:
+            explicit_paths[key] = base_dir / paths_config[key]
+
+    # Infer missing paths from windIO structure
+    resolved_paths = infer_paths_from_system_config(
+        system_config_path=system_yaml_path,
+        explicit_paths=explicit_paths,
+    )
+
+    # Validate all required paths exist
+    validate_required_paths(resolved_paths)
+
+    # Extract resolved paths
+    ref_power_path = resolved_paths["reference_power"]
+    ref_resource_path = resolved_paths["reference_resource"]
+    wf_layout_path = resolved_paths["wind_farm_layout"]
 
     output_dir = base_dir / paths_config["output_dir"]
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -219,6 +241,9 @@ def _run_single_farm_workflow(config: dict, base_dir: Path):
     database_path = output_dir / paths_config["database_file"]
 
     print(f"Resolved output directory: {output_dir}")
+    print(f"Resolved reference_power: {ref_power_path}")
+    print(f"Resolved reference_resource: {ref_resource_path}")
+    print(f"Resolved wind_farm_layout: {wf_layout_path}")
     print("Running in SINGLE-FARM mode")
 
     # === 1. PREPROCESSING STEP ===
