@@ -1,5 +1,8 @@
 # FLOW META API
 
+![Coverage](https://gitlab.windenergy.dtu.dk/eu-flow/wp4/flow-meta-api/coverage.svg)
+[![Documentation](https://img.shields.io/badge/docs-GitLab%20Pages-blue)](https://eu-flow.pages.windenergy.dtu.dk/wp4/WIFA-UQ/)
+
 ## Description
 
 This repository is created in the context of Task 4.3 of the FLOW project designed to develop an open-source Python framework integrating tools to perform calibration and bias correction with uncertainty quantification.
