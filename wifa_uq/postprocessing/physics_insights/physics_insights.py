@@ -514,19 +514,6 @@ def analyze_partial_dependence(
             f"Model must be fitted before partial dependence analysis: {e}"
         )
 
-    # Compute PD for all features at once
-    # Use feature indices instead of names for compatibility
-    feature_indices = [X.columns.get_loc(f) for f in features]
-
-    try:
-        pd_results = partial_dependence(
-            model, X, features=feature_indices, grid_resolution=grid_resolution
-        )
-    except Exception as e:
-        print(f"    WARNING: partial_dependence failed: {e}")
-        print("    Falling back to manual PD calculation...")
-        pd_results = _manual_partial_dependence(model, X, features, grid_resolution)
-
     n_features = len(features)
     n_cols = min(3, n_features)
     n_rows = (n_features + n_cols - 1) // n_cols
@@ -541,13 +528,25 @@ def analyze_partial_dependence(
         row, col = divmod(idx, n_cols)
         ax = axes[row, col]
 
-        # Extract PD values for this feature
-        pd_values = pd_results["average"][idx]
-        grid_values = pd_results["grid_values"][idx]
+        # Compute PD for this single feature (avoids sklearn multi-feature output issues)
+        feature_idx = X.columns.get_loc(feature)
 
-        # Flatten if needed (sklearn returns 2D arrays)
-        if hasattr(pd_values, "ndim") and pd_values.ndim > 1:
-            pd_values = pd_values.ravel()
+        try:
+            pd_result = partial_dependence(
+                model, X, features=[feature_idx], grid_resolution=grid_resolution
+            )
+            pd_values = pd_result["average"][0]
+            grid_values = pd_result["grid_values"][0]
+        except Exception as e:
+            print(f"    WARNING: partial_dependence failed for {feature}: {e}")
+            print("    Falling back to manual PD calculation...")
+            manual_result = _manual_partial_dependence(
+                model, X, [feature], grid_resolution
+            )
+            pd_values = manual_result["average"][0]
+            grid_values = manual_result["grid_values"][0]
+
+        # Flatten if needed (sklearn may return 2D arrays)
         pd_values = np.asarray(pd_values).flatten()
         grid_values = np.asarray(grid_values).flatten()
 
