@@ -1,6 +1,7 @@
 # FLOW META API
 
 ![Coverage](https://gitlab.windenergy.dtu.dk/eu-flow/wp4/flow-meta-api/coverage.svg)
+[![Documentation](https://img.shields.io/badge/docs-GitLab%20Pages-blue)](https://eu-flow.pages.windenergy.dtu.dk/wp4/WIFA-UQ/)
 
 ## Description
 

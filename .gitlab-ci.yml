@@ -1,10 +1,8 @@
 stages:
   - test
   - deploy
-
 variables:
   PRE_COMMIT_HOME: ${CI_PROJECT_DIR}/.cache/pre-commit
-
 # ===== PRE-COMMIT =====
 pre-commit:
   image: ghcr.io/prefix-dev/pixi:latest
@@ -19,7 +17,6 @@ pre-commit:
       - ${PRE_COMMIT_HOME}
   tags:
     - linux
-
 # ===== TEST =====
 test:
   image: ghcr.io/prefix-dev/pixi:latest
@@ -29,11 +26,14 @@ test:
     - rm -f pixi.lock
     - pixi install
     - pixi run test-cov
+    - pip install coverage-badge --break-system-packages
+    - coverage-badge -o coverage.svg -f
   coverage: '/TOTAL.*\s+(\d+%)/'
   artifacts:
     paths:
       - htmlcov/
       - coverage.xml
+      - coverage.svg
     reports:
       coverage_report:
         coverage_format: cobertura
@@ -42,8 +42,6 @@ test:
     expire_in: 1 week
   tags:
     - linux
-
-
 pages:
   image: python:3.12-slim
   stage: deploy
@@ -52,9 +50,7 @@ pages:
   script:
     - pip install mkdocs mkdocs-material
     - mkdocs build --site-dir public
-    # Optionally add coverage badge/report to docs
-    - pip install coverage-badge
-    - coverage-badge -o public/coverage.svg -f || true
+    - cp coverage.svg public/ || true
     - mkdir -p public/coverage
     - cp -r htmlcov/* public/coverage/ || true
   artifacts:
