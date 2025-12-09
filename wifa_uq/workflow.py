@@ -24,7 +24,8 @@ from wifa_uq.postprocessing.error_predictor.error_predictor import (
     run_observation_sensitivity,
     SIRPolynomialRegressor,
 )
-from wifa_uq.postprocessing.bayesian_calibration import BayesianCalibrationWrapper
+
+# from wifa_uq.postprocessing.bayesian_calibration import BayesianCalibrationWrapper
 from wifa_uq.postprocessing.calibration import (
     MinBiasCalibrator,
     DefaultParams,
@@ -38,7 +39,7 @@ CLASS_MAP = {
     "DefaultParams": DefaultParams,
     "LocalParameterPredictor": LocalParameterPredictor,
     # Bayesian
-    "BayesianCalibration": BayesianCalibrationWrapper,
+    # "BayesianCalibration": BayesianCalibrationWrapper,
     # Predictors
     "BiasPredictor": BiasPredictor,
     # ML Models
