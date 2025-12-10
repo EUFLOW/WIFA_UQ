@@ -9,7 +9,8 @@ from unittest.mock import patch
 import numpy as np
 import xarray as xr
 
-from wifa_uq.model_error_database.run_pywake_sweep import (
+from wifa import run_pywake
+from wifa_uq.model_error_database.run_sweep import (
     run_parameter_sweep,
     set_nested_dict_value,
     create_parameter_samples,
@@ -86,7 +87,7 @@ class TestCreateParameterSamples:
 class TestRunParameterSweep:
     """Tests for run_parameter_sweep function."""
 
-    @patch("wifa_uq.model_error_database.run_pywake_sweep.run_pywake")
+    @patch("wifa_uq.model_error_database.run_sweep.run_pywake")
     def test_output_shapes_and_metadata(
         self, mock_run_pywake, tmp_path, windio_system_dict
     ):
@@ -125,6 +126,7 @@ class TestRunParameterSweep:
 
         with patch("xarray.open_dataset", side_effect=fake_open_dataset):
             merged = run_parameter_sweep(
+                run_func=run_pywake,
                 turb_rated_power=2e6,
                 dat=windio_system_dict,  # Use proper windIO structure
                 param_config=param_config,
@@ -149,7 +151,7 @@ class TestRunParameterSweep:
         assert merged.attrs["swept_params"] == ["k_b"]
         assert "param_paths" in merged.attrs
 
-    @patch("wifa_uq.model_error_database.run_pywake_sweep.run_pywake")
+    @patch("wifa_uq.model_error_database.run_sweep.run_pywake")
     def test_multiple_parameters(self, mock_run_pywake, tmp_path, windio_system_dict):
         """Test sweep with multiple parameters."""
         n_turbines = 2
@@ -185,6 +187,7 @@ class TestRunParameterSweep:
 
         with patch("xarray.open_dataset", return_value=pw_ds):
             merged = run_parameter_sweep(
+                run_func=run_pywake,
                 turb_rated_power=2e6,
                 dat=windio_system_dict,
                 param_config=param_config,
@@ -200,7 +203,7 @@ class TestRunParameterSweep:
         assert "ss_alpha" in merged.coords
         assert set(merged.attrs["swept_params"]) == {"k_b", "ss_alpha"}
 
-    @patch("wifa_uq.model_error_database.run_pywake_sweep.run_pywake")
+    @patch("wifa_uq.model_error_database.run_sweep.run_pywake")
     def test_bias_calculation_correctness(
         self, mock_run_pywake, tmp_path, windio_system_dict
     ):
@@ -235,6 +238,7 @@ class TestRunParameterSweep:
 
         with patch("xarray.open_dataset", return_value=pw_ds):
             merged = run_parameter_sweep(
+                run_func=run_pywake,
                 turb_rated_power=rated_power,
                 dat=windio_system_dict,
                 param_config=param_config,

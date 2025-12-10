@@ -5,7 +5,8 @@ import re  # Import regular expression library
 from pathlib import Path
 from scipy.interpolate import interp1d
 from windIO.yaml import load_yaml
-from wifa_uq.model_error_database.run_pywake_sweep import run_parameter_sweep
+from wifa import run_pywake, run_foxes
+from wifa_uq.model_error_database.run_sweep import run_parameter_sweep
 from wifa_uq.model_error_database.utils import (
     calc_boundary_area,
     blockage_metrics,
@@ -180,7 +181,7 @@ class DatabaseGenerator:
         case_name = wf_dat.get("name", self.system_yaml_path.stem)
 
         print(
-            f"Case: {case_name}, {nt} turbines, Rated Power: {turb_rated_power / 1e6:.1f} MW, Hub Height: {hh} m"
+            f"Case: {case_name}, {nt} turbines, Rated Power: {turb_rated_power/1e6:.1f} MW, Hub Height: {hh} m"
         )
 
         # --- 3. Run parameter sweep ---
@@ -189,6 +190,7 @@ class DatabaseGenerator:
 
         if self.model == "pywake":
             result = run_parameter_sweep(
+                run_pywake,
                 turb_rated_power,
                 dat,
                 self.param_config,
@@ -197,6 +199,19 @@ class DatabaseGenerator:
                 n_samples=self.nsamples,
                 seed=1,
                 output_dir=output_dir,
+            )
+        elif self.model == "foxes":
+            result = run_parameter_sweep(
+                run_foxes,
+                turb_rated_power,
+                dat,
+                self.param_config,
+                reference_power,
+                None,  # reference_physical_inputs is not actually used by run_pywake_sweep
+                n_samples=self.nsamples,
+                seed=1,
+                output_dir=output_dir,
+                run_func_kwargs={"verbosity": 0},
             )
         else:
             raise NotImplementedError(f"Model '{self.model}' not implemented yet.")
