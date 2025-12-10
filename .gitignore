@@ -12,6 +12,7 @@ uv.lock
 .pixi
 .DS_Store
 
-# Output folders
+# Outputs
+results.*
 **/results/
 **/wifa_uq_results/
