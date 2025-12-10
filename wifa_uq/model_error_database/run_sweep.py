@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from wifa import run_pywake, run_foxes
 import json
+import argparse
 
 
 def set_nested_dict_value(d: dict, path: List[str], value: float) -> None:
@@ -179,19 +180,31 @@ if __name__ == "__main__":
         help="The simulation tool, either 'foxes' or 'pywake'",
     )
     parser.add_argument(
-        "case",
-        help="The EDF case name",
+        "-e",
+        "--example",
+        help="The sub folder name within examples/data",
+        default="EDF_datasets",
+    )
+    parser.add_argument(
+        "-c",
+        "--case",
+        help="The case name within the example folder",
+        default="HR1",
+    )
+    parser.add_argument(
+        "-o",
+        "--out_name",
+        help="The name of the samples output folder within the case folder",
+        default="samples",
     )
     args = parser.parse_args()
 
     if args.tool == "foxes":
         run_func = run_foxes
         run_func_kwargs = {"verbosity": 0}
-        out_name = "foxes_samples"
     elif args.tool == "pywake":
         run_func = run_pywake
         run_func_kwargs = {}
-        out_name = "pywake_samples"
     else:
         raise ValueError(
             "Invalid simulation tool specified. Choose either 'foxes' or 'pywake'."
@@ -209,7 +222,7 @@ if __name__ == "__main__":
     # navigating to a file containing metadata required to run wifa api
     case = args.case
     base_dir = Path(__file__).parent.parent.parent
-    edf_dir = base_dir / "examples" / "data" / "EDF_datasets"
+    edf_dir = base_dir / "examples" / "data" / args.example
     case_dir = edf_dir / case
     meta_file = case_dir / f"meta.yaml"
     meta = load_yaml(Path(meta_file))
@@ -219,7 +232,7 @@ if __name__ == "__main__":
     reference_physical_inputs = xr.load_dataset(case_dir / f"{meta['ref_resource']}")
     turb_rated_power = meta["rated_power"]
     reference_power = xr.load_dataset(case_dir / f"{meta['ref_power']}")
-    output_dir = case_dir / out_name
+    output_dir = case_dir / args.out_name
 
     start = time.time()
     print(f"Output directory to save results: {output_dir}")
