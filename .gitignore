@@ -1,9 +1,17 @@
+# python
 **/__pycache__/
 *.egg-info/
+*.pyc
+
+# uv environment
+__pypackages__/
 uv.lock
 .venv/
 
-examples/umbra4wifa
-**/pywake_samples/
-**/foxes_samples/
-results*
+# pixi environments
+.pixi
+.DS_Store
+
+# Output folders
+**/results/
+**/wifa_uq_results/

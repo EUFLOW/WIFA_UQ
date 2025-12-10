@@ -1,0 +1,10 @@
+name: DTU 10MW Offshore Reference Turbine
+performance:
+  Cp_curve:
+    Cp_values: [0.5924203166011447, 0.5924203166011447, 0.5924203166011447]
+    Cp_wind_speeds: [0., 10., 30.]
+  Ct_curve:
+    Ct_values: [0.8799959487872552, 0.8799959487872552, 0.8799959487872552]
+    Ct_wind_speeds: [0., 10., 30.]
+hub_height: 119.0
+rotor_diameter: 198.0

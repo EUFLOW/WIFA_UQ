@@ -9,9 +9,9 @@ attributes:
   model_outputs_specification:
     output_folder: "results"
     #
-    cases_run:
-      all_occurences: True
-      subset: [1]
+    run_configuration:
+      times_run:
+        all_occurences: True
     #
     turbine_outputs:
       turbine_nc_filename: 'turbine_data.nc' # dimension = states, turbine
@@ -29,5 +29,5 @@ attributes:
         dx: 150
         dy: 150
 
-output:
+simulation_output:
   turbine_data: !include turbine_data_ST-dX5-dY5-IEA15.nc

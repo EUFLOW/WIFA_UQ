@@ -1,0 +1,153 @@
+# examples/single_farm_xgb_insights.yaml
+#
+# Complete single-farm workflow demonstrating:
+#   - XGBoost for bias prediction
+#   - Local calibration with Linear regression
+#   - All available features
+#   - Physics insights analysis (NEW)
+#
+# This example shows how to extract physical understanding from
+# the ML bias correction, not just improved predictions.
+
+description: "Single-farm workflow with XGBoost and physics insights"
+
+paths:
+  # Input files (relative to this config file)
+  system_config: data/KUL_LES/wind_energy_system/system_pywake.yaml
+  reference_power: data/KUL_LES/observed_output/observedPowerKUL.nc
+  reference_resource: data/KUL_LES/plant_energy_resource/originalData.nc
+  wind_farm_layout: data/KUL_LES/plant_wind_farm/FLOW_UQ_vnv_toy_study_wind_farm.yaml
+
+  # Output locations
+  output_dir: results/KUL_LES_xgb_insights/
+  processed_resource_file: processed_physical_inputs.nc
+  database_file: results_stacked_hh.nc
+
+preprocessing:
+  run: true
+  steps:
+    - recalculate_params  # Computes: ABL_height, wind_veer, lapse_rate, TI
+
+database_gen:
+  run: true
+  flow_model: pywake
+  n_samples: 100
+
+  # Parameters to sweep - using same as kul_les_example for consistency
+  param_config:
+    attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b:
+      range: [0.01, 0.07]
+      default: 0.04
+      short_name: "k_b"
+    attributes.analysis.wind_deficit_model.ceps:
+      range: [0.15, 0.3]
+      default: 0.2154
+      short_name: "ceps"
+
+error_prediction:
+  run: true
+
+  # ============================================================
+  # AVAILABLE FEATURES
+  # ============================================================
+  # After preprocessing (recalculate_params):
+  #   - ABL_height        : Atmospheric boundary layer height [m]
+  #   - wind_veer         : Wind direction change with height [deg/m]
+  #   - lapse_rate        : Potential temperature gradient [K/m]
+  #
+  # After database_gen (layout-dependent, computed per flow case):
+  #   - Blockage_Ratio    : Fraction of rotor blocked by upstream turbines [0-1]
+  #   - Blocking_Distance : Normalized distance to blocking turbines [0-1]
+  #   - Farm_Length       : Farm extent in wind direction [rotor diameters]
+  #   - Farm_Width        : Farm extent cross-wind [rotor diameters]
+  #
+  # Optional (requires 'k' in resource file):
+  #   - turbulence_intensity
+  # ============================================================
+  features:
+    - ABL_height
+    - wind_veer
+    - lapse_rate
+    - Blockage_Ratio
+    - Blocking_Distance
+    - Farm_Length
+    - Farm_Width
+
+  # XGBoost - good balance of accuracy and interpretability
+  model: "XGB"
+  model_params:
+    max_depth: 4
+    n_estimators: 200
+    learning_rate: 0.1
+    random_state: 42
+
+  # Local calibration: learns condition-dependent optimal parameters
+  calibrator: LocalParameterPredictor
+  local_regressor: "Linear"
+  local_regressor_params: {}
+
+  bias_predictor: BiasPredictor
+
+  cross_validation:
+    run: true
+    splitting_mode: kfold_shuffled
+    n_splits: 5
+    metrics:
+      - rmse
+      - r2
+      - mae
+
+sensitivity_analysis:
+  # SHAP analysis (automatic for tree-based models)
+  run_observation_sensitivity: true
+  run_bias_sensitivity: true
+
+# ============================================================
+# PHYSICS INSIGHTS
+# ============================================================
+# Extracts interpretable physical understanding from the ML model:
+#
+# 1. Partial Dependence: How does bias change with each atmospheric
+#    variable? (e.g., "bias increases with ABL_height")
+#
+# 2. Feature Interactions: Which variable combinations jointly drive
+#    error? (e.g., "stability + shear together cause larger bias")
+#
+# 3. Regime Identification: Are there distinct failure modes?
+#    (e.g., "stable-nocturnal" vs "convective-high-TI" regimes)
+#
+# 4. Parameter Relationships: How should model parameters vary with
+#    conditions? (e.g., "k_b should increase with stability")
+#
+# Outputs:
+#   - physics_insights/partial_dependence.png
+#   - physics_insights/feature_interactions.png
+#   - physics_insights/error_regimes.png
+#   - physics_insights/parameter_relationships.png
+#   - physics_insights/physics_insights_report.md
+#   - physics_insights/physics_insights.json
+# ============================================================
+physics_insights:
+  run: true
+
+  # How bias varies with each feature (always recommended)
+  partial_dependence:
+    enabled: true
+    # Optionally limit to specific features:
+    # features: [ABL_height, wind_veer, lapse_rate]
+
+  # Feature interaction analysis (requires tree-based model)
+  interactions:
+    enabled: true
+    top_n: 5  # Report top 5 strongest interactions
+
+  # Cluster high-bias cases to find distinct failure modes
+  regime_analysis:
+    enabled: true
+    n_clusters: 3           # Number of regimes to identify
+    bias_percentile: 75     # Focus on top 25% bias cases
+
+  # How optimal parameters vary with conditions (local calibration only)
+  # This is the key insight: "what the physics model is missing"
+  parameter_relationships:
+    enabled: true

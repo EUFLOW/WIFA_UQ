@@ -50,7 +50,7 @@ rotor_averaging:
 run_type: "simulate" #"postprocess"
 #
 HPC_config:
-  run_node_number: 2 
+  run_node_number: 2
   run_ntasks_per_node: 48
   run_wall_time_hours: 8
   run_partition: "cn"
@@ -63,10 +63,10 @@ HPC_config:
   wckey: "P12BH:EFLOW"
 
 mesh:
-  remesh: True 
+  remesh: True
   mesh_file_name: "/scratch/users/j02084/simu/WP4-1WT/MESH/MESH_Single/toy_mesh_26000mOK.med"
 
-#inflow_parameters:  
+#inflow_parameters:
   #velocity_target_type_disk_average: 0
   #energy: 1
   #isol: 1

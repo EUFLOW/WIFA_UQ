@@ -1,0 +1,49 @@
+site_name: WIFA-UQ Documentation
+site_description: Uncertainty Quantification for Wind Farm Wake Modeling
+repo_url: https://github.com/EUFLOW/WIFA-UQ
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting_started/installation.md
+    - Quickstart: dependencies/quickstart.md
+  - User Guide:
+    - Configuration: user_guide/configuration.md
+    - Preprocessing: user_guide/preprocessing.md
+    - Database Generation: user_guide/database_generation.md
+    - Calibration:
+      - Global: user_guide/calibration/global_calibration.md
+      - Local: user_guide/calibration/local_calibration.md
+    - Error Prediction:
+      - ML Models: user_guide/error_prediction/ml_models.md
+      - Cross-Validation: user_guide/error_prediction/cross_validation.md
+      - Feature Engineering: user_guide/error_prediction/feature_engineering.md
+    - Sensitivity Analysis: user_guide/sensitivity_analysis.md
+    - Multi-Farm Workflows: user_guide/multi_farm_workflows.md
+  - Concepts:
+    - Overview: concepts/overview.md
+    - Model Bias: concepts/model_bias.md
+    - Calibration Theory: concepts/calibration_theory.md
+    - Uncertainty Quantification: concepts/uncertainty_quantification.md
+    - windIO Integration: concepts/windio_integration.md
+  - Reference:
+    - Swept Parameters: reference/swept_parameters.md
+    - Database Format: reference/database_format.md
+    - Config Schema: reference/config_schema.md
+  - Tutorials:
+    - Index: tutorials/index.md
+    - Single Farm XGBoost: tutorials/single_farm_xgb.md
+  - Appendix:
+    - Troubleshooting: appendix/troubleshooting.md
+    - Metadata Note: appendix/metadata_note.md
+  - Workflow:
+    - Project Structure: workflow/project_structure.md
+
+docs_dir: docs

@@ -26,5 +26,3 @@ rotor_averaging:
   wind_speed_exponent_for_ct: 1
 blockage_model:
   name: SelfSimilarityDeficit2020
-
-

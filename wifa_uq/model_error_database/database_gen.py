@@ -1,175 +1,288 @@
-# %%
-# %%
 import xarray as xr
 import numpy as np
-import matplotlib.pyplot as plt
-from windIO.yaml import load_yaml 
-from wifa_uq.model_error_database.run_pywake_sweep import *
+import time
+import re  # Import regular expression library
 from pathlib import Path
 from scipy.interpolate import interp1d
-import time
-from wifa_uq.model_error_database.utils import calc_boundary_area
-from wifa_uq.model_error_database.utils import blockage_metrics,farm_length_width
+from windIO.yaml import load_yaml
+from wifa_uq.model_error_database.run_pywake_sweep import run_parameter_sweep
+from wifa_uq.model_error_database.utils import (
+    calc_boundary_area,
+    blockage_metrics,
+    farm_length_width,
+)
 
 
 class DatabaseGenerator:
-    def __init__(self,nsamples,param_config,base_folder,case_names,model="pywake",save_to=""):
-        self.nsamples=nsamples
-        self.param_config=param_config
-        self.model=model
-        self.base_folder=base_folder
-        self.case_names=case_names
-        self.save_to = save_to
+    def __init__(
+        self,
+        nsamples: int,
+        param_config: dict,
+        system_yaml_path: Path,
+        ref_power_path: Path,
+        processed_resource_path: Path,
+        wf_layout_path: Path,
+        output_db_path: Path,
+        model="pywake",
+    ):
+        """
+        Initializes the DatabaseGenerator.
 
-    def generate_database(self):
-        all_case_results = []
+        Args:
+            nsamples (int): Number of parameter samples to run.
+            param_config (dict): Dictionary of parameters to sample.
+            system_yaml_path (Path): Path to the windIO system YAML file.
+            ref_power_path (Path): Path to the reference power NetCDF file (the "truth" data).
+            processed_resource_path (Path): Path to the *preprocessed* physical inputs NetCDF.
+            wf_layout_path (Path): Path to the wind_farm YAML (for layout utils).
+            output_db_path (Path): Full path to save the final stacked NetCDF database.
+            model (str, optional): Model to use. Defaults to "pywake".
+        """
+        self.nsamples = nsamples
+        self.param_config = self._normalize_param_config(param_config)
+        self.model = model
+        self.system_yaml_path = Path(system_yaml_path)
+        self.ref_power_path = Path(ref_power_path)
+        self.processed_resource_path = Path(processed_resource_path)
+        self.wf_layout_path = Path(wf_layout_path)
+        self.output_db_path = Path(output_db_path)
+
+        # Ensure output directory exists
+        self.output_db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Validate input paths
+        if not self.system_yaml_path.exists():
+            raise FileNotFoundError(f"System YAML not found: {self.system_yaml_path}")
+        if not self.ref_power_path.exists():
+            raise FileNotFoundError(
+                f"Reference power file not found: {self.ref_power_path}"
+            )
+        if not self.processed_resource_path.exists():
+            raise FileNotFoundError(
+                f"Processed resource file not found: {self.processed_resource_path}"
+            )
+        if not self.wf_layout_path.exists():
+            raise FileNotFoundError(
+                f"Wind farm layout file not found: {self.wf_layout_path}"
+            )
+
+    def _normalize_param_config(self, param_config: dict) -> dict:
+        """
+        Normalize param_config to full format.
+        Handles both simple [min, max] and full {range, default, short_name} formats.
+        """
+        normalized = {}
+        for path, config in param_config.items():
+            if isinstance(config, list):
+                # Simple format: [min, max]
+                short_name = path.split(".")[-1]  # Use last part of path
+                normalized[path] = {
+                    "range": config,
+                    "default": None,
+                    "short_name": short_name,
+                }
+            elif isinstance(config, dict):
+                # Full format
+                if "short_name" not in config:
+                    config["short_name"] = path.split(".")[-1]
+                normalized[path] = config
+            else:
+                raise ValueError(f"Invalid param_config format for {path}")
+
+        return normalized
+
+    def _infer_rated_power(self, wf_dat: dict, system_dat: dict) -> float:
+        """
+        Attempts to find the rated power using multiple strategies, in order.
+        """
+        # The 'turbines' dict could be at the top level of wf_dat
+        # or inside system_dat['wind_farm']
+        turbine_data_sources = [
+            wf_dat.get("turbines"),
+            system_dat.get("wind_farm", {}).get("turbines"),
+        ]
+
+        for turbine_data in turbine_data_sources:
+            if not turbine_data:
+                continue
+
+            # --- Strategy 1: Check for explicit 'rated_power' key ---
+            try:
+                power = turbine_data["performance"]["rated_power"]
+                if power:
+                    print(f"Found 'rated_power' key: {power} W")
+                    return float(power)
+            except (KeyError, TypeError):
+                pass  # Not found, try next strategy
+
+            # --- Strategy 2: Get max from 'power_curve' ---
+            try:
+                power_values = turbine_data["performance"]["power_curve"][
+                    "power_values"
+                ]
+                if power_values:
+                    power = max(power_values)
+                    print(f"Found 'power_curve'. Max power: {power} W")
+                    return float(power)
+            except (KeyError, TypeError):
+                pass  # Not found, try next strategy
+
+            # --- Strategy 3: Parse the turbine 'name' ---
+            try:
+                name = turbine_data["name"]
+                # Regex to find numbers (int or float) followed by "MW" (case-insensitive)
+                match = re.search(r"(\d+(\.\d+)?)\s*MW", name, re.IGNORECASE)
+                if match:
+                    power_mw = float(match.group(1))
+                    power_w = power_mw * 1_000_000
+                    print(
+                        f"Inferred rated power from turbine name '{name}': {power_w} W"
+                    )
+                    return power_w
+            except (KeyError, TypeError):
+                pass  # Not found, try next strategy
+
+        # All strategies failed
+        raise ValueError(
+            "Could not find or infer 'rated_power'.\n"
+            "Tried: \n"
+            "  1. 'rated_power' key in '...turbines.performance'.\n"
+            "  2. 'max(power_curve.power_values)' in '...turbines.performance'.\n"
+            "  3. Parsing 'XMW' from '...turbines.name' field.\n"
+            "Please add one of these to your windIO turbine file."
+        )
+
+    def generate_database(self) -> xr.Dataset:
+        """
+        Runs the full database generation pipeline for the single specified case.
+        """
         starttime = time.time()
 
-        for case in self.case_names:
-            case_folder = self.base_folder / case
+        # --- 1. Load all data from explicit paths ---
+        print(f"Loading system config: {self.system_yaml_path.name}")
+        dat = load_yaml(self.system_yaml_path)
+        print(f"Loading reference power: {self.ref_power_path.name}")
+        reference_power = xr.load_dataset(self.ref_power_path)
+        print(f"Loading processed resource: {self.processed_resource_path.name}")
+        reference_physical_inputs = xr.load_dataset(self.processed_resource_path)
+        print(f"Loading wind farm layout: {self.wf_layout_path.name}")
+        wf_dat = load_yaml(self.wf_layout_path)
 
-            # --- Load metadata and reference datasets ---
-            meta = load_yaml(case_folder / "meta.yaml")
-            dat = load_yaml(case_folder / meta["system"])
-            reference_power = xr.load_dataset(case_folder / meta["ref_power"])
-            turb_rated_power = meta["rated_power"]
-            nt = meta["nt"]
-            output_dir = case_folder / "pywake_samples"
-            reference_physical_inputs = xr.load_dataset(case_folder / "updated_physical_inputs.nc")
+        # --- 2. Infer metadata (replaces meta.yaml) ---
 
-            # --- Run parameter sweep ---
-            if self.model == "pywake":
-                result = run_parameter_sweep(
-                    turb_rated_power,
-                    dat,
-                    self.param_config,
-                    reference_power,
-                    reference_physical_inputs,
-                    n_samples=self.nsamples,
-                    seed=1,
-                    output_dir=output_dir,
+        # --- NEW ROBUST INFERENCE ---
+        turb_rated_power = self._infer_rated_power(wf_dat, dat)
+
+        # Get other metadata from the loaded files
+        nt = len(wf_dat["layouts"][0]["coordinates"]["x"])
+        hh = wf_dat["turbines"]["hub_height"]
+        d = wf_dat["turbines"]["rotor_diameter"]
+        case_name = wf_dat.get("name", self.system_yaml_path.stem)
+
+        print(
+            f"Case: {case_name}, {nt} turbines, Rated Power: {turb_rated_power/1e6:.1f} MW, Hub Height: {hh} m"
+        )
+
+        # --- 3. Run parameter sweep ---
+        output_dir = self.output_db_path.parent / "pywake_samples"
+        output_dir.mkdir(exist_ok=True)
+
+        if self.model == "pywake":
+            result = run_parameter_sweep(
+                turb_rated_power,
+                dat,
+                self.param_config,
+                reference_power,
+                None,  # reference_physical_inputs is not actually used by run_pywake_sweep
+                n_samples=self.nsamples,
+                seed=1,
+                output_dir=output_dir,
+            )
+        else:
+            raise NotImplementedError(f"Model '{self.model}' not implemented yet.")
+
+        print("Parameter sweep complete. Processing physical inputs...")
+
+        # --- 4. Process and add physical inputs ---
+        phys_inputs = reference_physical_inputs.copy()
+
+        # Rename 'time' to 'flow_case' to match run_pywake_sweep output
+        if "time" in phys_inputs.dims:
+            # Check if flow_case dimension already exists from run_pywake_sweep
+            n_flow_cases = len(result.flow_case)
+            if len(phys_inputs.time) != n_flow_cases:
+                raise ValueError(
+                    f"Mismatch in 'time' dimension of resource ({len(phys_inputs.time)}) "
+                    f"and 'flow_case' dimension of simulation ({n_flow_cases})."
                 )
-            else:
-                raise NotImplementedError(f"Model '{self.model}' not implemented yet.")
 
-            # adding physical inputs to dataset (optionally interpolating to hub height)
-            hh=dat['wind_farm']['turbines']['hub_height'] 
+            # Use the coordinates from the simulation result, but data from resource
+            phys_inputs = phys_inputs.rename({"time": "flow_case"})
+            phys_inputs = phys_inputs.assign_coords(flow_case=result.flow_case)
 
-            z0=reference_physical_inputs.z0.values
-            LMO=reference_physical_inputs.LMO.values
-            ABL_height=reference_physical_inputs.ABL_height.values
-            capping_inversion_strength=reference_physical_inputs.capping_inversion_strength.values
-            capping_inversion_thickness=reference_physical_inputs.capping_inversion_thickness.values
-            ws=reference_physical_inputs.wind_speed.values
-            wd=reference_physical_inputs.wind_direction.values
-            ti=reference_physical_inputs.turbulence_intensity.values
-            theta=reference_physical_inputs.potential_temperature.values
-            epsilon=reference_physical_inputs.epsilon.values
-            k=reference_physical_inputs.k.values
-            lapse_rate=reference_physical_inputs.lapse_rate.values
+        # Interpolate to hub height if 'height' dimension exists
+        if "height" in phys_inputs.dims:
+            print(f"Interpolating physical inputs to hub height ({hh} m)...")
+            heights = phys_inputs.height.values
 
-            x=dat['wind_farm']['layouts'][0]['coordinates']['x']
-            y=dat['wind_farm']['layouts'][0]['coordinates']['y']
-            density=calc_boundary_area(x, y,show=False)/(nt) # wf area in m2 divided by nt
+            interp_ds = xr.Dataset(coords=phys_inputs.coords)
+            for var, da in phys_inputs.data_vars.items():
+                if "height" in da.dims:
+                    # Create 1D interpolation function for each flow case
+                    f_interp = interp1d(
+                        heights,
+                        da,
+                        axis=da.dims.index("height"),
+                        fill_value="extrapolate",
+                    )
+                    # Create new DataArray with interpolated values
+                    new_dims = [dim for dim in da.dims if dim != "height"]
+                    interp_ds[var] = (new_dims, f_interp(hh))
+                else:
+                    # Keep non-height-dependent variables
+                    interp_ds[var] = da
 
-            # store the reference physical inputs as hub height values in another dataset
-            if "height" in reference_physical_inputs.dims:
-                print("interpolating to hub height")
-                heights=reference_physical_inputs.height.values
-                ws = interp1d(heights, ws, axis=1, fill_value="extrapolate")(hh)
-                wd = interp1d(heights, wd, axis=1, fill_value="extrapolate")(hh)
-                ti = np.maximum(interp1d(heights, ti, axis=1, fill_value="extrapolate")(hh),2e-2,)
-                theta=interp1d(heights, theta, axis=1, fill_value="extrapolate")(hh)
-                epsilon=interp1d(heights, epsilon, axis=1, fill_value="extrapolate")(hh)
-                k=interp1d(heights, k, axis=1, fill_value="extrapolate")(hh)
-                print('data interpolated')
+            phys_inputs = interp_ds
+        else:
+            print("Physical inputs have no 'height' dim, assuming hub-height or 0D.")
 
-            else:
-                print('no interpolation needed')
+        # Add all physical inputs to the results dataset
+        for var in phys_inputs.data_vars:
+            if var in result.coords:
+                continue  # Don't overwrite coords
+            result[var] = phys_inputs[var]
 
-            # Add the hub height inputs back into the results dataset
-            result["wind_speed"] = xr.DataArray(ws, dims=["flow_case"])
-            result["wind_direction"] = xr.DataArray(wd, dims=["flow_case"])
-            result["turbulence_intensity"] = xr.DataArray(ti, dims=["flow_case"])
-            result["potential_temperature"] = xr.DataArray(theta, dims=["flow_case"])
-            result["epsilon"] = xr.DataArray(epsilon, dims=["flow_case"])
-            result["k"] = xr.DataArray(k, dims=["flow_case"])
-            result["lapse_rate"] = xr.DataArray(lapse_rate, dims=["flow_case"])
-            result["z0"] = xr.DataArray(z0, dims=["flow_case"])
-            result["LMO"] = xr.DataArray(LMO, dims=["flow_case"])
-            result["ABL_height"] = xr.DataArray(ABL_height, dims=["flow_case"])
-            result["capping_inversion_strength"] = xr.DataArray(capping_inversion_strength, dims=["flow_case"])
-            result["capping_inversion_thickness"] = xr.DataArray(capping_inversion_thickness, dims=["flow_case"])
+        # --- 5. Add farm-level features ---
+        print("Adding farm-level features...")
+        result = result.expand_dims(dim={"wind_farm": [case_name]})
+        result["turb_rated_power"] = xr.DataArray(
+            [turb_rated_power], dims=["wind_farm"]
+        )
+        result["nt"] = xr.DataArray([nt], dims=["wind_farm"])
 
-            # adding some WF specific variables
-            # these variables are a function of wind farm
-            result = result.expand_dims(dim={"wind_farm": [case]})
+        x = wf_dat["layouts"][0]["coordinates"]["x"]
+        y = wf_dat["layouts"][0]["coordinates"]["y"]
+        density = calc_boundary_area(x, y, show=False) / nt
+        result["farm_density"] = xr.DataArray([density], dims=["wind_farm"])
 
-            result["turb_rated_power"] = xr.DataArray(
-            [turb_rated_power], 
-            dims=["wind_farm"])
+        # --- 6. Flatten and add layout features ---
+        print("Stacking dataset...")
+        stacked = result.stack(case_index=("wind_farm", "flow_case"))
+        stacked = stacked.dropna(dim="case_index", how="all", subset=["model_bias_cap"])
+        stacked = stacked.reset_index("case_index")  # Makes case_index a variable
 
-            result["nt"] = xr.DataArray(
-            [nt], 
-            dims=["wind_farm"])
+        print("Adding layout-dependent features (Blockage, etc.)...")
+        BR_farms, BD_farms, lengths, widths = [], [], [], []
 
-            wf_dat=load_yaml(Path(f"{self.base_folder}/{case}/{meta['wf_dat']}"))
-            x=wf_dat['layouts'][0]['coordinates']['x']
-            y=wf_dat['layouts'][0]['coordinates']['y']
-            density=calc_boundary_area(x, y,show=False)/(nt) # wf area in m2 divided by nt
+        xy = np.column_stack((x, y))
+        wind_dirs = stacked.wind_direction.values  # Get all wind directions at once
 
-            result["farm_density"] = xr.DataArray(
-            [density], 
-            dims=["wind_farm"])
-
-            all_case_results.append(result)
-
-        # %%
-        # combining datasets from different wind farms, whilst including an identifier for the wind farm simulation used
-        # since there are different numbers of flow cases for each wind farm, and the dimensions need to be the same size, we will have some nan values
-        # therefore the different flow cases for each wind farm are also stacked together if that is preferred
-
-        case_datasets=[]
-        for case, result in zip(self.case_names, all_case_results):
-            case_datasets.append(result)
-        combined = xr.concat(case_datasets, dim='wind_farm')
-
-        # Flattenning case and index into one dimension 
-        stacked = combined.stack(case_index=('wind_farm', 'flow_case'))  # shape: [sample, case_index]
-        stacked = stacked.dropna(dim='case_index', subset=['model_bias_cap'])
-        stacked = stacked.reset_index('case_index')
-        # stacked.to_netcdf('results_stacked_hh.nc')
-        # combined.to_netcdf('results_combined.nc')
-
-        tottime=round(time.time() - starttime,3)
-        print(f"Total time taken: {tottime} seconds")
-
-        print("Adding Layout Features")
-
-        #%% Post Processing
-        # Adding some layout specific features
-        case_i=stacked.case_index.values
-
-        BR_farms=[]
-        BD_farms=[]
-        lengths=[]
-        widths=[]
-        for i in case_i:
-            wind_farm=stacked.wind_farm.values[i]
-            meta_file=f"{self.base_folder}/{wind_farm}/meta.yaml"
-            meta=load_yaml(Path(meta_file))
-            dat = load_yaml(Path(f"{self.base_folder}/{wind_farm}/{meta['system']}"))
-        
-            x=dat['wind_farm']['layouts'][0]['coordinates']['x']
-            y=dat['wind_farm']['layouts'][0]['coordinates']['y']
-            d=dat['wind_farm']['turbines']['rotor_diameter']
-
-            xy = np.column_stack((x, y))
-
-            wind_dir=stacked.wind_direction.values[i]
-
-            BR, BD, BR_farm, BD_farm = blockage_metrics(xy, wind_dir, d)
-            length, width=farm_length_width(x,y,wind_dir,d)
+        for wd in wind_dirs:
+            # L_inf_factor=20.0, grid_res=151
+            BR, BD, BR_farm, BD_farm = blockage_metrics(
+                xy, wd, d, grid_res=51, plot=False
+            )
+            length, width = farm_length_width(x, y, wd, d, plot=False)
 
             BR_farms.append(BR_farm)
             BD_farms.append(BD_farm)
@@ -181,39 +294,19 @@ class DatabaseGenerator:
         stacked["Farm_Length"] = xr.DataArray(lengths, dims=["case_index"])
         stacked["Farm_Width"] = xr.DataArray(widths, dims=["case_index"])
 
-        if self.save_to:
-            stacked.to_netcdf(f'{self.save_to}/results_stacked_hh.nc')
-        else:
-            stacked.to_netcdf('results_stacked_hh.nc')
-        
+        # --- 7. Save the final database ---
+        print(f"Saving final database to: {self.output_db_path}")
+        self.output_db_path.parent.mkdir(parents=True, exist_ok=True)
+        stacked.to_netcdf(self.output_db_path)
+
+        tottime = round(time.time() - starttime, 3)
+        print(f"Database generation complete. Total time: {tottime} seconds")
+
         return stacked
 
 
+# This check prevents this code from running when imported
 if __name__ == "__main__":
-    base_dir = Path("data/EDF_datasets")
-
-
-    # Identifiers for the different wind farm simulations on windlab
-    case_names=[
-        "HR1",   
-        "HR2",     
-        "HR3",
-        "NYSTED1",   
-        "NYSTED2",
-        "VirtWF_ABL_IEA10", 
-        "VirtWF_ABL_IEA15_ali_DX5_DY5",   
-        "VirtWF_ABL_IEA15_stag_DX5_DY5",    
-        "VirtWF_ABL_IEA15_stag_DX5_DY7p5",  
-        "VirtWF_ABL_IEA15_stag_DX7p5_DY5",  
-        "VirtWF_ABL_IEA22"
-    ]
-
-    # defining ranges for the parameter samples
-    param_config = {
-            "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": (0.01, 0.07),
-            "attributes.analysis.blockage_model.ss_alpha": (0.75, 1.0)
-        }
-    
-    nsamples=10  # First sample by definition will be default, then 100 additional random samples
-    db_generator = DatabaseGenerator(nsamples, param_config, base_dir, case_names, model="pywake")
-    db_generator.generate_database()
+    # You can add a simple test harness here for debugging this file directly
+    print("This script is a module and is intended to be imported by 'workflow.py'.")
+    print("To run a workflow, please use 'run.py' in the root directory.")
