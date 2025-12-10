@@ -1133,7 +1133,7 @@ def run_cross_validation(
         n_splits = cv_config.get("n_splits", 5)
         cv = KFold(n_splits=n_splits, shuffle=True, random_state=42)
         splits = list(cv.split(xr_data.case_index))
-        fold_labels = [f"Fold {i+1}" for i in range(n_splits)]
+        fold_labels = [f"Fold {i + 1}" for i in range(n_splits)]
         print(f"Using KFold with {n_splits} splits.")
 
     stats_cv, y_preds, y_tests, pw_all, ref_all = [], [], [], [], []

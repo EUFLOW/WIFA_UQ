@@ -180,7 +180,7 @@ class DatabaseGenerator:
         case_name = wf_dat.get("name", self.system_yaml_path.stem)
 
         print(
-            f"Case: {case_name}, {nt} turbines, Rated Power: {turb_rated_power/1e6:.1f} MW, Hub Height: {hh} m"
+            f"Case: {case_name}, {nt} turbines, Rated Power: {turb_rated_power / 1e6:.1f} MW, Hub Height: {hh} m"
         )
 
         # --- 3. Run parameter sweep ---

@@ -19,8 +19,7 @@ kernel = 1.0 * RBF(length_scale=1.0)
 gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10)
 
 # Split the data into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.5, random_state=0)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5, random_state=0)
 
 # Fit the Gaussian Process model to the training data
 gp.fit(X_train, y_train)
@@ -33,11 +32,17 @@ x = np.linspace(0, 5, 1000)[:, np.newaxis]
 y_mean, y_cov = gp.predict(x, return_cov=True)
 
 plt.figure(figsize=(10, 5))
-plt.scatter(X_train, y_train, c='r', label='Training Data')
-plt.plot(x, y_mean, 'k', lw=2, zorder=9, label='Predicted Mean')
-plt.fill_between(x[:, 0], y_mean - 1.96 * np.sqrt(np.diag(y_cov)), y_mean + 1.96 *
-                 np.sqrt(np.diag(y_cov)), alpha=0.2, color='k', label='95% Confidence Interval')
-plt.xlabel('X')
-plt.ylabel('y')
+plt.scatter(X_train, y_train, c="r", label="Training Data")
+plt.plot(x, y_mean, "k", lw=2, zorder=9, label="Predicted Mean")
+plt.fill_between(
+    x[:, 0],
+    y_mean - 1.96 * np.sqrt(np.diag(y_cov)),
+    y_mean + 1.96 * np.sqrt(np.diag(y_cov)),
+    alpha=0.2,
+    color="k",
+    label="95% Confidence Interval",
+)
+plt.xlabel("X")
+plt.ylabel("y")
 plt.legend()
 plt.show()

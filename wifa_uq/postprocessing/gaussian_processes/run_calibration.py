@@ -34,17 +34,19 @@ if resfig_dir.is_dir():
     rmtree(resfig_dir)
 calfig_dir.mkdir(exist_ok=True, parents=True)
 
+
 def calc_error(cfd_results, pop_results, capacity):
     P_cfd = cfd_results["power"].values.T
-    P_fxs = pop_results[FV.P].values 
+    P_fxs = pop_results[FV.P].values
 
     if error_method == "rmse":
         mse = np.sqrt(np.sum((P_cfd[None] - P_fxs) ** 2, axis=2))
         return mse / capacity
-    
+
     elif error_method == "bias":
         bias = np.abs(np.sum(P_cfd[None] - P_fxs, axis=2))
         return bias / capacity
+
 
 all_results_coords = {}
 all_results_data = {
@@ -59,6 +61,7 @@ all_results_data = {
     "best_k_error": [("case",), []],
 }
 
+
 def write_figure_calib(resfig_dir, k_values, error, i, ci, title):
     cname = f"case_{ci:03d}_calibration"
     fpath = resfig_dir / f"{cname}.png"
@@ -68,24 +71,26 @@ def write_figure_calib(resfig_dir, k_values, error, i, ci, title):
     ax.scatter(k_values[i], error[i], color="red", label=f"Best k = {k_values[i]:.3f}")
     ax.set_xlabel("k")
     ax.set_ylabel("RMSE / Capacity")
-    ax.set_title(title)     
+    ax.set_title(title)
     ax.legend()
     ax.grid()
     fig.tight_layout()
     fig.savefig(fpath)
     plt.close(fig)
 
+
 def write_figure_flow(calfig_dir, fig, ci, title):
     cname = f"case_{ci:03d}_flow"
     fpath = calfig_dir / f"{cname}.png"
     print("Writing figure to", fpath)
     fig.suptitle(title)
-    #fig.tight_layout()
+    # fig.tight_layout()
     fig.savefig(fpath)
     plt.close(fig)
-    
+
+
 with foxes.Engine.new(
-    engine, 
+    engine,
     chunk_size_states=chunksize_s,
     chunk_size_points=chunksize_p,
     n_procs=n_procs,
@@ -103,10 +108,14 @@ with foxes.Engine.new(
         wio_dict = foxes.input.yaml.windio.windio_file2dict(sysfiles[0])
         n_turbines = foxes.input.yaml.windio.read_n_turbines(wio_dict)
         hub_heights = foxes.input.yaml.windio.read_hub_heights(wio_dict)
-        assert len(hub_heights) == 1, f"Only one hub height supported, got {hub_heights} for case {case_dir.name}"
+        assert len(hub_heights) == 1, (
+            f"Only one hub height supported, got {hub_heights} for case {case_dir.name}"
+        )
         hh = hub_heights[0]
         rotor_diameters = foxes.input.yaml.windio.read_rotor_diameters(wio_dict)
-        assert len(rotor_diameters) == 1, f"Only one rotor diameter supported, got {rotor_diameters} for case {case_dir.name}"
+        assert len(rotor_diameters) == 1, (
+            f"Only one rotor diameter supported, got {rotor_diameters} for case {case_dir.name}"
+        )
         D = rotor_diameters[0]
 
         physical_inputs = open_dataset(case_dir / "updated_physical_inputs.nc")
@@ -127,15 +136,17 @@ with foxes.Engine.new(
         n_pop = len(k_values)
         pop_data = np.zeros((n_pop, n_turbines))
         pop_data[:] = k_values[:, None]
-        pop_data = Dataset({
-            FV.K: (("index", FC.TURBINE), pop_data),
-        })
+        pop_data = Dataset(
+            {
+                FV.K: (("index", FC.TURBINE), pop_data),
+            }
+        )
 
         idict, algo, odir = foxes.input.yaml.windio.read_windio_dict(
             wio_dict,
             rotor_model=rotor,
             population_params=dict(data_source=pop_data, verbosity=0),
-            verbosity=verbosity
+            verbosity=verbosity,
         )
         for wmodel in algo.wake_models.values():
             if hasattr(wmodel, "wake_k"):
@@ -156,12 +167,12 @@ with foxes.Engine.new(
             title = f"Case {ci + t}: {case_dir.name}, Time {t}"
             futures.append(
                 engine.submit(
-                    write_figure_calib, 
-                    calfig_dir, 
-                    k_values, 
-                    error[:, t], 
-                    eri[t], 
-                    ci + t, 
+                    write_figure_calib,
+                    calfig_dir,
+                    k_values,
+                    error[:, t],
+                    eri[t],
+                    ci + t,
                     title,
                 )
             )
@@ -203,8 +214,8 @@ with foxes.Engine.new(
         """
         ci += n_times
 
-all_results_data = {v:(d[0],np.asarray(d[1])) for v,d in all_results_data.items()}    
-results = Dataset(all_results_data)#, coords=all_results_coords)
+all_results_data = {v: (d[0], np.asarray(d[1])) for v, d in all_results_data.items()}
+results = Dataset(all_results_data)  # , coords=all_results_coords)
 print("\nResults:\n", results)
 print(f"\nSaving results to {results_file}")
 foxes.utils.write_nc(results, results_file)

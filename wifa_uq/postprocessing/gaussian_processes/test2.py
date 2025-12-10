@@ -21,9 +21,10 @@ def calc_error(cfd_results, pop_results):
     # RMSE:
     P_cfd = cfd_results["power"].mean(dim="time").values
     P_fxs = pop_results[FV.P].mean(dim="state").values
-    #mse = np.sqrt(np.mean((P_cfd[None] - P_fxs) ** 2, axis=(1, 2)))
+    # mse = np.sqrt(np.mean((P_cfd[None] - P_fxs) ** 2, axis=(1, 2)))
     mse = np.sqrt(np.mean((P_cfd[None] - P_fxs) ** 2, axis=1))
     return mse
+
 
 n_cases = len(cases_dirs)
 all_results_coords = {
@@ -31,12 +32,17 @@ all_results_coords = {
 }
 all_results_data = {
     "wake_k": (("scan_index",), k_values),
-    "error": (("case", "scan_index",), np.full((n_cases, len(k_values)), np.nan)),
+    "error": (
+        (
+            "case",
+            "scan_index",
+        ),
+        np.full((n_cases, len(k_values)), np.nan),
+    ),
 }
 
 with foxes.Engine.new("process", verbosity=0):
-
-    for ci, case_dir in enumerate(cases_dirs): 
+    for ci, case_dir in enumerate(cases_dirs):
         print(f"\nENTERING CASE {ci}/{n_cases}: {case_dir}")
 
         physical_inputs = open_dataset(case_dir / "updated_physical_inputs.nc")
@@ -58,14 +64,16 @@ with foxes.Engine.new("process", verbosity=0):
         n_pop = len(k_values)
         pop_data = np.zeros((n_pop, n_turbines))
         pop_data[:] = k_values[:, None]
-        pop_data = Dataset({
-            FV.K: (("index", FC.TURBINE), pop_data),
-        })
+        pop_data = Dataset(
+            {
+                FV.K: (("index", FC.TURBINE), pop_data),
+            }
+        )
 
         idict, algo, odir = foxes.input.yaml.windio.read_windio_dict(
             wio_dict,
             population_params=dict(data_source=pop_data, verbosity=0),
-            verbosity=0
+            verbosity=0,
         )
         for wmodel in algo.wake_models.values():
             if hasattr(wmodel, "wake_k"):
@@ -78,11 +86,15 @@ with foxes.Engine.new("process", verbosity=0):
         pop_results = algo.population_model.farm2pop_results(algo, farm_results)
         k = pop_results[FV.K].values[:, 0, 0]
 
-        P_mean = (pop_results[FV.P] * pop_results[FV.WEIGHT]).sum(dim=FC.STATE).sum(dim=FC.TURBINE)
+        P_mean = (
+            (pop_results[FV.P] * pop_results[FV.WEIGHT])
+            .sum(dim=FC.STATE)
+            .sum(dim=FC.TURBINE)
+        )
         error = calc_error(cfd_results, pop_results)
         all_results_data["error"][1][ci, :] = error
         print(f"Error: {error}")
-        
+
 print(Dataset(all_results_data, coords=all_results_coords))
 
 quit()
