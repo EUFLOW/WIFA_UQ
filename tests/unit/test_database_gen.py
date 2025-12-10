@@ -189,6 +189,7 @@ class TestGenerateDatabase:
 
         # Mock run_parameter_sweep to return synthetic data
         def fake_run_parameter_sweep(
+            run_pywake,
             turb_rated_power,
             dat,
             param_config,

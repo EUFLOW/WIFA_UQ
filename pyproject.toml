@@ -57,6 +57,10 @@ test = [
     "pytest",
     "pytest-cov",
     "pycodestyle",
+    "xgboost",
+    "shap",
+    "openturns",
+    "setuptools",
 ]
 dev = [
     "objsize",
