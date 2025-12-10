@@ -6,17 +6,17 @@ import matplotlib.pyplot as plt
 import plotly.graph_objs as go
 import panel as pn
 
-pn.extension("plotly")
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import (
-    RBF,
     Matern,
     WhiteKernel,
     ConstantKernel as C,
 )
-from sklearn.preprocessing import RobustScaler, StandardScaler
+from sklearn.preprocessing import StandardScaler
 from itertools import combinations
 from shutil import rmtree
+pn.extension("plotly")
+
 
 # File and output paths
 nc_path = os.path.join(

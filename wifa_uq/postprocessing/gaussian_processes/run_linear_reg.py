@@ -3,7 +3,7 @@ from pathlib import Path
 import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.linear_model import Ridge, LinearRegression
+from sklearn.linear_model import Ridge
 from sklearn.model_selection import cross_val_predict, KFold
 from shutil import rmtree
 
@@ -82,9 +82,9 @@ with xr.open_dataset(nc_path) as ds:
     plt.xlabel("True best_k")
     plt.ylabel("Predicted best_k")
     if len(feature_labels) == len(feature_vars):
-        plt.title(f"Ridge Regression: best_k from all features")
+        plt.title("Ridge Regression: best_k from all features")
     else:
-        plt.title(f"Ridge Regression: best_k from SVD components")
+        plt.title("Ridge Regression: best_k from SVD components")
     plt.legend()
     plt.tight_layout()
     plt.savefig(output_dir / "true_vs_pred_best_k_all_features.png")

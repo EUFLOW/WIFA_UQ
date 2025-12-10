@@ -228,7 +228,7 @@ if __name__ == "__main__":
     base_dir = Path(__file__).parent.parent.parent
     edf_dir = base_dir / "examples" / "data" / args.example
     case_dir = edf_dir / case
-    meta_file = case_dir / f"meta.yaml"
+    meta_file = case_dir / "meta.yaml"
     meta = load_yaml(Path(meta_file))
 
     print(f"metadata for flow case: {meta}")

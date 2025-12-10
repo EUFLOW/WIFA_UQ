@@ -9,7 +9,7 @@ rdir = Path("results") / error_method
 odir = rdir / "figures" / "evaluate"
 cases_file = rdir / "calibration_results.nc"
 
-for v, l in zip(vrs, lbl):
+for v, lb in zip(vrs, lbl):
     ds = xr.open_dataset(cases_file)
 
     # Check for 'best_k' variable
@@ -32,7 +32,7 @@ for v, l in zip(vrs, lbl):
             except Exception:
                 print(f"Skipping variable {var} due to shape mismatch.")
                 continue
-        fpath = dr / f"eval_{l}_vs_{var}.png"
+        fpath = dr / f"eval_{lb}_vs_{var}.png"
         print(f"Writing file {fpath}")
         plt.figure()
         plt.scatter(data, best_k, alpha=0.7)
@@ -40,8 +40,8 @@ for v, l in zip(vrs, lbl):
             plt.xlabel("Power Error (RMSE/capacity)")
         else:
             plt.xlabel(var)
-        plt.ylabel(l)
-        plt.title(f"{l} vs {var}")
+        plt.ylabel(lb)
+        plt.title(f"{lb} vs {var}")
         plt.grid(True)
         plt.tight_layout()
         plt.savefig(fpath)

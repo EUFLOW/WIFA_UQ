@@ -1,11 +1,7 @@
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 from xarray import Dataset
 from shutil import rmtree
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF
-from sklearn.model_selection import train_test_split
 from pathlib import Path
 from xarray import open_dataset
 import foxes
