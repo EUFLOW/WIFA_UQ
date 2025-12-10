@@ -16,4 +16,4 @@ uv.lock
 results.*
 **/results/
 **/wifa_uq_results/
-**/*_samples/
+**/*samples/

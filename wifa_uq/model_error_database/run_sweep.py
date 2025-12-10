@@ -97,13 +97,13 @@ def run_parameter_sweep(
             path = param_path.split(".")
             set_nested_dict_value(dat, path, param_samples[i])
 
-        sample_dir = f"{output_dir}/sample_{i}"
+        sample_dir = output_dir / f"sample_{i}"
 
         # Run simulation
         run_func(dat, output_dir=sample_dir, **run_func_kwargs)
 
         # Process results (in terms of power)
-        pw_power = xr.open_dataset("results/turbine_data.nc").power.values
+        pw_power = xr.open_dataset(sample_dir/"turbine_data.nc").power.values.T
 
         ref_power = reference_power.power.values
         # workaround for some cases
@@ -212,11 +212,16 @@ if __name__ == "__main__":
 
     # Example usage:
     param_config = {
-        "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": (
-            0.01,
-            0.3,
-        ),
-        "attributes.analysis.blockage_model.ss_alpha": (0.75, 1.25),
+        "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": {
+            "range": [0.01, 0.03],
+            "default": 0.04,
+            "short_name": "k_b",
+        },
+        "attributes.analysis.blockage_model.ss_alpha": {
+            "range": [0.75, 1.25],
+            "default": 0.875,
+            "short_name": "ss_alpha",
+        },
     }
 
     # navigating to a file containing metadata required to run wifa api
