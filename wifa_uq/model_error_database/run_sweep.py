@@ -103,7 +103,7 @@ def run_parameter_sweep(
         run_func(dat, output_dir=sample_dir, **run_func_kwargs)
 
         # Process results (in terms of power)
-        pw_power = xr.open_dataset(sample_dir / "turbine_data.nc").power.values.T
+        pw_power = xr.open_dataset(sample_dir / "turbine_data.nc").power.values
 
         ref_power = reference_power.power.values
         # workaround for some cases

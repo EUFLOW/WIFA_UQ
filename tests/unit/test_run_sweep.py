@@ -9,7 +9,6 @@ from unittest.mock import patch
 import numpy as np
 import xarray as xr
 
-from wifa import run_pywake
 from wifa_uq.model_error_database.run_sweep import (
     run_parameter_sweep,
     set_nested_dict_value,
@@ -96,7 +95,7 @@ class TestRunParameterSweep:
         n_times = 5
         n_samples = 4
 
-        # Fake turbine_data.nc that pywake would write
+        # Fake turbine_data.nc that  or foxes would write
         pw_ds = xr.Dataset(
             data_vars=dict(
                 power=(("turbine", "time"), np.ones((n_turbines, n_times)) * 1.5e6)
@@ -126,7 +125,7 @@ class TestRunParameterSweep:
 
         with patch("xarray.open_dataset", side_effect=fake_open_dataset):
             merged = run_parameter_sweep(
-                run_func=run_pywake,
+                run_func=mock_run_pywake,
                 turb_rated_power=2e6,
                 dat=windio_system_dict,  # Use proper windIO structure
                 param_config=param_config,
@@ -187,7 +186,7 @@ class TestRunParameterSweep:
 
         with patch("xarray.open_dataset", return_value=pw_ds):
             merged = run_parameter_sweep(
-                run_func=run_pywake,
+                run_func=mock_run_pywake,
                 turb_rated_power=2e6,
                 dat=windio_system_dict,
                 param_config=param_config,
@@ -207,7 +206,7 @@ class TestRunParameterSweep:
     def test_bias_calculation_correctness(
         self, mock_run_pywake, tmp_path, windio_system_dict
     ):
-        """Test that bias is calculated correctly as (pywake - reference) / rated_power."""
+        """Test that bias is calculated correctly as (model - reference) / rated_power."""
         n_turbines = 2
         n_times = 3
         rated_power = 2e6
@@ -238,7 +237,7 @@ class TestRunParameterSweep:
 
         with patch("xarray.open_dataset", return_value=pw_ds):
             merged = run_parameter_sweep(
-                run_func=run_pywake,
+                run_func=mock_run_pywake,
                 turb_rated_power=rated_power,
                 dat=windio_system_dict,
                 param_config=param_config,
