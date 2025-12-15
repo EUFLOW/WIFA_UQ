@@ -16,4 +16,3 @@ def test_kul_single_farm_xgb_example():
 
 if __name__ == "__main__":
     test_kul_single_farm_xgb_example()
-    
