@@ -22,7 +22,7 @@ class DatabaseGenConfig(BaseModel):
     """Configuration for database generation."""
 
     run: bool = False
-    flow_model: Literal["pywake"] = "pywake"
+    flow_model: Literal["pywake", "foxes"] = "pywake"
     n_samples: int = 100
     # Accepts either [min, max] list or full dict with range/default/short_name
     param_config: dict[str, Union[ParamConfigDict, list[float]]] = Field(
