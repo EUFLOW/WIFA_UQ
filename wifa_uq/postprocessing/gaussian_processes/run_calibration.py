@@ -199,9 +199,9 @@ with foxes.Engine.new(
             futures.append(
                 engine.submit(
                     write_figure_flow,
-                    calfig_dir, 
+                    calfig_dir,
                     fig,
-                    ci + t, 
+                    ci + t,
                     title,
                 )
             )
