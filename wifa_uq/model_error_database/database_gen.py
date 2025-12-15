@@ -185,7 +185,7 @@ class DatabaseGenerator:
         )
 
         # --- 3. Run parameter sweep ---
-        output_dir = self.output_db_path.parent / "pywake_samples"
+        output_dir = self.output_db_path.parent / "samples"
         output_dir.mkdir(exist_ok=True)
 
         if self.model == "pywake":

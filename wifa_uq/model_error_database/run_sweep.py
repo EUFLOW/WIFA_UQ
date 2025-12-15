@@ -60,8 +60,8 @@ def run_parameter_sweep(
     run_func_kwargs={},
 ) -> List[xr.Dataset]:
     """
-    run the pywake api for a range of ṕarameter samples
-    compare reference power to pywake power
+    run the wifa api for a range of ṕarameter samples
+    compare reference power to engineering wake model power
     calculate the RMSE over the entire farm
     normalize based on rated power
     return the power errors for each sample as a netcdf
@@ -128,7 +128,7 @@ def run_parameter_sweep(
 
         # Fill pre-allocated arrays for all samples
         bias_cap[i, :] = model_bias_cap
-        # pywake power (farm average)
+        # pywake or foxes power (farm average)
         pw[i, :] = np.nanmean(pw_power, axis=0) / turb_rated_power
         # reference power (farm average)
         ref[i, :] = np.nanmean(ref_power, axis=0) / turb_rated_power
