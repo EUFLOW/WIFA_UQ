@@ -60,7 +60,7 @@ def run_parameter_sweep(
     run_func_kwargs={},
 ) -> List[xr.Dataset]:
     """
-    run the wifa api for a range of ṕarameter samples
+    run the wifa api for a range of parameter samples
     compare reference power to engineering wake model power
     calculate the RMSE over the entire farm
     normalize based on rated power
