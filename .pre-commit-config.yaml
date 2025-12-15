@@ -18,13 +18,22 @@ repos:
       - id: debug-statements  # Check for pdb/breakpoint
 
   # Ruff - Fast Python linter and formatter (replaces flake8, isort, pycodestyle, black)
+  #- repo: https://github.com/astral-sh/ruff-pre-commit
+  #  rev: v0.8.2
+  #  hooks:
+  #    # Linter
+  #    - id: ruff
+  #      args: [--fix, --exit-non-zero-on-fix]
+  #    # Formatter (optional - comment out if you prefer manual formatting)
+  #    - id: ruff-format
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.2
+    # Ruff version.
+    rev: v0.14.9
     hooks:
-      # Linter
-      - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
-      # Formatter (optional - comment out if you prefer manual formatting)
+      # Run the linter.
+      - id: ruff-check
+        args: [ --fix, --exit-non-zero-on-fix ]
+      # Run the formatter.
       - id: ruff-format
 
   # Type checking (optional - can be slow, enable when ready)
