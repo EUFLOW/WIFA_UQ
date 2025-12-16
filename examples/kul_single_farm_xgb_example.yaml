@@ -30,7 +30,7 @@ preprocessing:
 
 database_gen:
   run: true
-  flow_model: pywake #foxes
+  flow_model: foxes #pywake
   n_samples: 100
 
   # Parameters to sweep (these become calibration targets)
