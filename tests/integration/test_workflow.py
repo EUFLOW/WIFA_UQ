@@ -12,3 +12,7 @@ def test_kul_single_farm_xgb_example():
     assert config_path.exists(), f"Config file not found: {config_path}"
 
     run_workflow(config_path)
+
+
+if __name__ == "__main__":
+    test_kul_single_farm_xgb_example()

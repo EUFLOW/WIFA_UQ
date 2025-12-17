@@ -125,18 +125,18 @@ def test_validate_all_system_configs():
             failures.append((rel_path, str(e)))
 
     # Print summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("System Schema Validation Summary")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"  Passed:  {len(successes)}")
     print(f"  Failed:  {len(failures)}")
     print(f"  Skipped: {len(skipped)} (file not found)")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     if failures:
         failure_msg = "\n\nValidation failures:\n"
         for path, error in failures:
-            failure_msg += f"\n{'-'*40}\n{path}:\n{error[:500]}...\n"
+            failure_msg += f"\n{'-' * 40}\n{path}:\n{error[:500]}...\n"
         pytest.fail(failure_msg)
 
 

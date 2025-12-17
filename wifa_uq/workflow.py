@@ -138,7 +138,7 @@ def _validate_farm_configs(farms: list[dict]) -> None:
         missing = required_keys - set(farm.keys())
         if missing:
             raise ValueError(
-                f"Farm #{i+1} is missing required keys: {missing}. "
+                f"Farm #{i + 1} is missing required keys: {missing}. "
                 f"Each farm must have 'name' and 'system_config'."
             )
 

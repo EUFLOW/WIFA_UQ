@@ -4,8 +4,9 @@ from typing import Dict, List
 from windIO.yaml import load_yaml
 import time
 from pathlib import Path
-from wifa.pywake_api import run_pywake
+from wifa import run_pywake, run_foxes
 import json
+import argparse
 
 
 def set_nested_dict_value(d: dict, path: List[str], value: float) -> None:
@@ -47,6 +48,7 @@ def create_parameter_samples(
 
 
 def run_parameter_sweep(
+    run_func: callable,
     turb_rated_power,
     dat: dict,
     param_config: Dict[str, dict],
@@ -54,16 +56,18 @@ def run_parameter_sweep(
     reference_physical_inputs: dict,
     n_samples: int = 100,
     seed: int = None,
-    output_dir="cases/default/pywake_sampling/",
+    output_dir="cases/default/sampling/",
+    run_func_kwargs={},
 ) -> List[xr.Dataset]:
     """
-    run the pywake api for a range of ṕarameter samples
-    compare reference power to pywake power
+    run the wifa api for a range of parameter samples
+    compare reference power to engineering wake model power
     calculate the RMSE over the entire farm
     normalize based on rated power
     return the power errors for each sample as a netcdf
 
     Args:
+        run_func: callable to run the simulation (run_foxes or run_pywake)
         turb_rated_power: rated power of a single turbine in the park (for normalizing power errors)
         dat: windIO system dat file
         param_config: specifying which parameters to sample from and ranges of values
@@ -71,6 +75,7 @@ def run_parameter_sweep(
         reference_physical_inputs: xarray with physical inputs to the reference simulations
         n_samples: number of parameter samples
         seed: random seed for generating parameter samples
+        run_func_kwargs: additional keyword arguments to pass to the run_func
 
     """
 
@@ -92,13 +97,13 @@ def run_parameter_sweep(
             path = param_path.split(".")
             set_nested_dict_value(dat, path, param_samples[i])
 
-        sample_dir = f"{output_dir}/sample_{i}"
+        sample_dir = output_dir / f"sample_{i}"
 
         # Run simulation
-        run_pywake(dat, output_dir=sample_dir)
+        run_func(dat, output_dir=sample_dir, **run_func_kwargs)
 
         # Process results (in terms of power)
-        pw_power = xr.open_dataset("results/turbine_data.nc").power.values
+        pw_power = xr.open_dataset(sample_dir / "turbine_data.nc").power.values
 
         ref_power = reference_power.power.values
         # workaround for some cases
@@ -123,7 +128,7 @@ def run_parameter_sweep(
 
         # Fill pre-allocated arrays for all samples
         bias_cap[i, :] = model_bias_cap
-        # pywake power (farm average)
+        # pywake or foxes power (farm average)
         pw[i, :] = np.nanmean(pw_power, axis=0) / turb_rated_power
         # reference power (farm average)
         ref[i, :] = np.nanmean(ref_power, axis=0) / turb_rated_power
@@ -168,33 +173,75 @@ def run_parameter_sweep(
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "tool",
+        help="The simulation tool, either 'foxes' or 'pywake'",
+    )
+    parser.add_argument(
+        "-e",
+        "--example",
+        help="The sub folder name within examples/data",
+        default="EDF_datasets",
+    )
+    parser.add_argument(
+        "-c",
+        "--case",
+        help="The case name within the example folder",
+        default="HR1",
+    )
+    parser.add_argument(
+        "-o",
+        "--out_name",
+        help="The name of the samples output folder within the case folder",
+        default="samples",
+    )
+    args = parser.parse_args()
+
+    if args.tool == "foxes":
+        run_func = run_foxes
+        run_func_kwargs = {"verbosity": 0}
+    elif args.tool == "pywake":
+        run_func = run_pywake
+        run_func_kwargs = {}
+    else:
+        raise ValueError(
+            "Invalid simulation tool specified. Choose either 'foxes' or 'pywake'."
+        )
+
     # Example usage:
     param_config = {
-        "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": (
-            0.01,
-            0.3,
-        ),
-        "attributes.analysis.blockage_model.ss_alpha": (0.75, 1.25),
+        "attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b": {
+            "range": [0.01, 0.03],
+            "default": 0.04,
+            "short_name": "k_b",
+        },
+        "attributes.analysis.blockage_model.ss_alpha": {
+            "range": [0.75, 1.25],
+            "default": 0.875,
+            "short_name": "ss_alpha",
+        },
     }
 
-    # navigating to a file containing metadata required to run pywake api
-    case = "HR1"
-    meta_file = f"EDF_datasets/{case}/meta.yaml"
+    # navigating to a file containing metadata required to run wifa api
+    case = args.case
+    base_dir = Path(__file__).parent.parent.parent
+    edf_dir = base_dir / "examples" / "data" / args.example
+    case_dir = edf_dir / case
+    meta_file = case_dir / "meta.yaml"
     meta = load_yaml(Path(meta_file))
 
     print(f"metadata for flow case: {meta}")
-
-    dat = load_yaml(Path(f"EDF_datasets/{case}/{meta['system']}"))
-    reference_physical_inputs = xr.load_dataset(
-        f"EDF_datasets/{case}/{meta['ref_resource']}"
-    )
+    dat = load_yaml(case_dir / f"{meta['system']}")
+    reference_physical_inputs = xr.load_dataset(case_dir / f"{meta['ref_resource']}")
     turb_rated_power = meta["rated_power"]
-    reference_power = xr.load_dataset(f"EDF_datasets/{case}/{meta['ref_power']}")
-    output_dir = f"EDF_datasets/{case}/pywake_samples"
+    reference_power = xr.load_dataset(case_dir / f"{meta['ref_power']}")
+    output_dir = case_dir / args.out_name
 
     start = time.time()
     print(f"Output directory to save results: {output_dir}")
     results = run_parameter_sweep(
+        run_func,
         turb_rated_power,
         dat,
         param_config,
@@ -202,7 +249,8 @@ if __name__ == "__main__":
         reference_physical_inputs,
         n_samples=10,
         seed=3,
-        output_dir=Path(output_dir),
+        output_dir=output_dir,
+        run_func_kwargs=run_func_kwargs,
     )
     print("Time taken for parameter sweep:", time.time() - start)
     results.to_netcdf("results.nc")

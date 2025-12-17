@@ -95,7 +95,7 @@ class MultiFarmDatabaseGenerator:
             missing = required_keys - set(farm.keys())
             if missing:
                 raise ValueError(
-                    f"Farm #{i+1} missing required keys: {missing}. "
+                    f"Farm #{i + 1} missing required keys: {missing}. "
                     f"Each farm must have 'name' and 'system_config'."
                 )
 

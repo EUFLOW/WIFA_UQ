@@ -6,7 +6,7 @@
 repos:
   # General file fixes
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -19,12 +19,12 @@ repos:
 
   # Ruff - Fast Python linter and formatter (replaces flake8, isort, pycodestyle, black)
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.2
+    rev: v0.14.9
     hooks:
-      # Linter
-      - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
-      # Formatter (optional - comment out if you prefer manual formatting)
+      # Run the linter.
+      - id: ruff-check
+        args: [ --fix, --exit-non-zero-on-fix ]
+      # Run the formatter.
       - id: ruff-format
 
   # Type checking (optional - can be slow, enable when ready)
