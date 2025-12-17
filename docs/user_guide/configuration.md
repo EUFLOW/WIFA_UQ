@@ -329,6 +329,11 @@ sensitivity_analysis:
     marginals: kernel
     copula: independent
     q: 0.5
+    model_coeff_name: None
+    plot_options:
+      scatter: False
+      distribution: False
+      metrics: ["RMSE", "R2", "Wasserstein", "KS", "KL"]  
 ```
 
 **Method selection:**
@@ -489,6 +494,11 @@ sensitivity_analysis:
     marginals: kernel
     copula: independent
     q: 0.5
+  model_coeff_name: 'k_b'
+    plot_options:
+      scatter: False
+      distribution: False
+      metrics: ["RMSE", "R2", "Wasserstein", "KS", "KL"]  
 ```
 
 ---

@@ -84,7 +84,12 @@ sensitivity_analysis:
     degree: 5
     marginals: "kernel"
     copula: "independent"
-    q: 0.5
+    q: 1
+    model_coeff_name: 'k_b'
+    plot_options:
+      scatter: true
+      distribution: true
+      metrics: ["RMSE", "KS", "KL"]  # Metrics to plot["RMSE", "R2", "Wasserstein", "KS", "KL"] 
 
 physics_insights:
   run: true

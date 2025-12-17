@@ -971,8 +971,7 @@ def run_observation_sensitivity(
         from wifa_uq.postprocessing.PCE_tool.pce_utils import run_pce_sensitivity
 
         run_pce_sensitivity(
-            X=X.values,
-            y=y,
+            database,
             feature_names=features_list,
             pce_config=pce_config or {},
             output_dir=output_dir,
