@@ -199,7 +199,6 @@ def plot_training_quality(
     seed=42,
     output_dir="./PCE_training_quality/",
 ):
-
     """
     Evaluate PCE training quality via scatter plots, distribution comparison, and metrics.
 
@@ -223,7 +222,6 @@ def plot_training_quality(
     Returns:
         None
     """
-
 
     ntimes = value_of_interest.shape[1]
 
@@ -319,9 +317,7 @@ def plot_training_quality(
             line_len = 0
             str_title = ""
             for var_name in varnames:
-                value_str = (
-                    f"{var_name}={np.array(database[var_name])[it]:.4g}"
-                )
+                value_str = f"{var_name}={np.array(database[var_name])[it]:.4g}"
                 if line_len + len(value_str) > 30:
                     str_title += "\n"
                     line_len = 0
@@ -481,10 +477,10 @@ def run_pce_sensitivity(database, feature_names, pce_config: dict, output_dir: P
             - marginals (str): 'kernel', 'uniform', or 'normal', default 'kernel'
             - copula (str): 'independent' or 'normal', default 'independent'
             - q (float): Hyperbolic truncation parameter, default 1.0
-            plot_options: Dict with settings to evalute PCE quality 
+            plot_options: Dict with settings to evalute PCE quality
                 - scatter (bool): activate scatter plot
                 - distribution (bool): activate distribution plot
-                - metrics (str): Metrics to plot["RMSE", "R2", "Wasserstein", "KS", "KL"] 
+                - metrics (str): Metrics to plot["RMSE", "R2", "Wasserstein", "KS", "KL"]
         output_dir: Path to save plots and CSV output
 
     Returns:
@@ -493,7 +489,7 @@ def run_pce_sensitivity(database, feature_names, pce_config: dict, output_dir: P
             - 'sobol_total': dict mapping feature names to total-order indices
             - 'pce_result': the fitted PCE object (for further analysis if needed)
             - 'feature_names': list of feature names
-            - 'model_coeff_name': model coefficient name 
+            - 'model_coeff_name': model coefficient name
             - 'varnames': list of variable names, feature_names + model_coeff_name
             - 'value_of_interest': value_of_interest, 'ref_power_cap' if model_coeff_name = None, else 'model_bias_cap'
 
@@ -608,7 +604,7 @@ def run_pce_sensitivity(database, feature_names, pce_config: dict, output_dir: P
     plot_training_quality(
         database=database,
         varnames=varnames,
-        value_of_interest=array_of_interest,  
+        value_of_interest=array_of_interest,
         kk_values=kk_values,
         input_variable_array_physical=input_array[:n_samples, :n_feature],
         n_feature=n_feature,
