@@ -333,7 +333,7 @@ sensitivity_analysis:
     plot_options:
       scatter: False
       distribution: False
-      metrics: ["RMSE", "R2", "Wasserstein", "KS", "KL"]  
+      metrics: ["RMSE", "R2", "Wasserstein", "KS", "KL"]
 ```
 
 **Method selection:**
@@ -498,7 +498,7 @@ sensitivity_analysis:
     plot_options:
       scatter: False
       distribution: False
-      metrics: ["RMSE", "R2", "Wasserstein", "KS", "KL"]  
+      metrics: ["RMSE", "R2", "Wasserstein", "KS", "KL"]
 ```
 
 ---

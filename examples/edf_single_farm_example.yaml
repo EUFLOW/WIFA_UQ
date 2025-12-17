@@ -89,7 +89,7 @@ sensitivity_analysis:
     plot_options:
       scatter: true
       distribution: true
-      metrics: ["RMSE", "KS", "KL"]  # Metrics to plot["RMSE", "R2", "Wasserstein", "KS", "KL"] 
+      metrics: ["RMSE", "KS", "KL"]  # Metrics to plot["RMSE", "R2", "Wasserstein", "KS", "KL"]
 
 physics_insights:
   run: true
