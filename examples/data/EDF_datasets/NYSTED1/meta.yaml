@@ -1,0 +1,7 @@
+name: NYSTED1
+nt: 72
+rated_power: 2300000.0
+ref_power: turbine_data.nc
+ref_resource: Nysted-ABL-neutre-Multi-10.nc
+system: wind_energy_system.yaml
+wf_dat: wind_farm.yaml

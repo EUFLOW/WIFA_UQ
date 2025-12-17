@@ -1,0 +1,30 @@
+name: VirtWF_ABL_IEA22
+site: !include energy_site.yaml
+wind_farm: !include wind_farm.yaml
+attributes:
+  flow_model:
+    name: pywake
+  analysis: !include analysis_pywake.yaml
+
+  model_outputs_specification:
+    output_folder: "results"
+    run_configuration:
+      times_run:
+        all_occurences: True
+    turbine_outputs:
+      turbine_nc_filename: 'turbine_data.nc' # dimension = time, turbine
+      output_variables: ['power', 'rotor_effective_velocity'] #'frequency'
+    #
+    flow_field:
+      report: False
+      flow_nc_filename: flow_field.nc
+
+      output_variables: ['wind_speed', 'wind_direction','tke']
+      z_planes:
+        z_sampling: "hub_heights"
+        xy_sampling: "original_grid"
+    #
+
+
+simulation_output:
+  turbine_data: !include turbine_data.nc

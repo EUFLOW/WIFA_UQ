@@ -1,0 +1,6 @@
+name: VirtWF_ABL_IEA10
+boundaries:
+    polygons:
+      - x: [-90, 3834,3, 3834,3, -90]
+        y: [90, 90, -90, -90]
+energy_resource: !include energy_resource.yaml

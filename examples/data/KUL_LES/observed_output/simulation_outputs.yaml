@@ -1,0 +1,2 @@
+# Turbine data from simulation observations
+turbine_data: !include observedPowerKUL.nc

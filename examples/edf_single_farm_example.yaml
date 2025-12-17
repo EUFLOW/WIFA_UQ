@@ -1,0 +1,112 @@
+description: "WIFA-UQ workflow for EDF dataset HR1 (Horns Rev, H=800 m)"
+
+paths:
+  # All paths are relative to this YAML file’s location
+  system_config: data/EDF_datasets/HR1/wind_energy_system.yaml
+  reference_power: data/EDF_datasets/HR1/turbine_data.nc
+  # Use the *NetCDF* file, not the energy_resource.yaml wrapper
+  reference_resource: data/EDF_datasets/HR1/HR-R3-Neutre-ABL-800.nc
+  wind_farm_layout: data/EDF_datasets/HR1/wind_farm.yaml
+
+  # Outputs
+  output_dir: data/EDF_datasets/HR1/wifa_uq_results
+  processed_resource_file: processed_physical_inputs.nc
+  database_file: results_stacked_hh.nc
+
+preprocessing:
+  run: true
+  # Uses PreprocessingInputs(ref_resource_path=reference_resource)
+  # Steps implemented in preprocessing.py
+  steps:
+    - recalculate_params   # TI, wind_veer, ABL_height, lapse_rate, etc.
+
+database_gen:
+  run: true
+  flow_model: pywake
+  # Parameters are the same ones used elsewhere in the repo
+  param_config:
+    attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b:
+      range: [0.01, 0.07]
+      default: 0.04
+      short_name: "k_b"
+    attributes.analysis.blockage_model.ss_alpha:
+      range: [0.75, 1.0]
+      default: 0.875
+      short_name: "ss_alpha"
+  n_samples: 100
+
+error_prediction:
+  run: true
+
+  # Features that are guaranteed to exist after preprocessing + DB gen
+  features:
+    - ABL_height
+    - wind_veer
+    - lapse_rate
+    - Blockage_Ratio
+    - Blocking_Distance
+
+  # Choice of ML model for bias prediction
+  model: "PCE"
+  model_params:
+    degree: 5
+    marginals: "kernel"
+    copula: "independent"
+    q: 0.5
+    max_features: 5
+    allow_high_dim: false
+
+  calibrator: LocalParameterPredictor
+  local_regressor: "Ridge"
+  local_regressor_params:
+    alpha: 1.0
+
+  bias_predictor: BiasPredictor
+
+  cross_validation:
+    run: true
+    splitting_mode: kfold_shuffled    # or LeaveOneGroupOut if you combine many farms
+    n_splits: 6
+    metrics:
+      - rmse
+      - r2
+      - mae
+
+sensitivity_analysis:
+  # Sensitivity of observations to features
+  run_observation_sensitivity: true
+  # Sensitivity of predicted bias to features
+  run_bias_sensitivity: true
+
+  # Optional: for PCE-based SA on observations
+  method: "auto"
+  pce_config:
+    degree: 5
+    marginals: "kernel"
+    copula: "independent"
+    q: 0.5
+
+physics_insights:
+  run: true
+
+  # How bias varies with each feature (always recommended)
+  partial_dependence:
+    enabled: true
+    # Optionally limit to specific features:
+    # features: [ABL_height, wind_veer, lapse_rate]
+
+  # Feature interaction analysis (requires tree-based model)
+  interactions:
+    enabled: true
+    top_n: 5  # Report top 5 strongest interactions
+
+  # Cluster high-bias cases to find distinct failure modes
+  regime_analysis:
+    enabled: true
+    n_clusters: 3           # Number of regimes to identify
+    bias_percentile: 75     # Focus on top 25% bias cases
+
+  # How optimal parameters vary with conditions (local calibration only)
+  # This is the key insight: "what the physics model is missing"
+  parameter_relationships:
+    enabled: true

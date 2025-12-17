@@ -1,0 +1,20 @@
+# python
+**/__pycache__/
+*.egg-info/
+*.pyc
+*_cache/
+
+# uv environment
+__pypackages__/
+uv.lock
+.venv/
+
+# pixi environments
+.pixi
+.DS_Store
+
+# Outputs
+results.*
+**/results/
+**/wifa_uq_results/
+**/*samples/
