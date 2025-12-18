@@ -1,0 +1,120 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+# Permissions needed for Pages deployment and check runs
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  checks: write
+
+jobs:
+  # ===== PRE-COMMIT =====
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pre-commit
+        run: pip install pre-commit
+
+      - name: Cache pre-commit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
+
+      - name: Run pre-commit
+        run: pre-commit run --all-files
+
+  # ===== TEST =====
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Pixi
+        uses: prefix-dev/setup-pixi@v0.5.1
+        with:
+          pixi-version: latest
+          # Caching is handled automatically by setup-pixi
+
+      - name: Install Dependencies
+        run: |
+          # GitLab script removed lock file.
+          # If strictly required, uncomment next line:
+          # rm -f pixi.lock
+          pixi install
+
+      - name: Run Tests
+        run: pixi run test-cov
+
+      - name: Generate Coverage Badge
+        run: |
+          pip install coverage-badge
+          coverage-badge -o coverage.svg -f
+
+      # Upload coverage artifacts so 'pages' job can see them
+      - name: Upload Coverage Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            htmlcov/
+            coverage.xml
+            coverage.svg
+          retention-days: 7
+
+  # ===== DEPLOY PAGES =====
+  deploy-pages:
+    # Only deploy on main/master
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Coverage Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage_artifacts
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install MkDocs
+        run: pip install mkdocs mkdocs-material
+
+      - name: Build Site
+        run: |
+          mkdocs build --site-dir public
+
+          # Move coverage artifacts into public
+          cp coverage_artifacts/coverage.svg public/ || true
+          mkdir -p public/coverage
+          cp -r coverage_artifacts/htmlcov/* public/coverage/ || true
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'public'
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
