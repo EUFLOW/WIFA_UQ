@@ -22,7 +22,7 @@ preprocessing:
 
 database_gen:
   run: true
-  flow_model: pywake
+  flow_model: foxes
   # Parameters are the same ones used elsewhere in the repo
   param_config:
     attributes.analysis.wind_deficit_model.wake_expansion_coefficient.k_b:
