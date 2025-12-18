@@ -1,7 +1,7 @@
 # WIFA-UQ
 
-![Coverage](https://gitlab.windenergy.dtu.dk/eu-flow/wp4/flow-meta-api/badges/main/coverage.svg)
-[![Documentation](https://img.shields.io/badge/docs-GitLab%20Pages-blue)](https://eu-flow.pages.windenergy.dtu.dk/wp4/flow-meta-api/)
+[![Coverage](https://EUFLOW.github.io/WIFA_UQ/coverage.svg)](https://EUFLOW.github.io/WIFA_UQ/coverage/)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://EUFLOW.github.io/WIFA_UQ/)
 
 ## Description
 
@@ -20,22 +20,21 @@ This repository is designed to develop an open-source Python framework integrati
 - **windIO Integration** — Uses the [windIO](https://github.com/EUFLOW/windIO) standard for wind energy system definitions
 
 
-
 ## Documentation
 
-Full documentation is available at **[eu-flow.pages.windenergy.dtu.dk/wp4/WIFA-UQ](https://eu-flow.pages.windenergy.dtu.dk/wp4/WIFA-UQ/)**
+Full documentation is available at **[EUFLOW.github.io/WIFA_UQ](https://EUFLOW.github.io/WIFA_UQ/)**
 
-- [Installation Guide](https://eu-flow.pages.windenergy.dtu.dk/wp4/WIFA-UQ/getting_started/installation/)
-- [Quickstart Tutorial](https://eu-flow.pages.windenergy.dtu.dk/wp4/WIFA-UQ/dependencies/quickstart/)
-- [Configuration Reference](https://eu-flow.pages.windenergy.dtu.dk/wp4/WIFA-UQ/user_guide/configuration/)
-- [API Concepts](https://eu-flow.pages.windenergy.dtu.dk/wp4/WIFA-UQ/concepts/overview/)
+- [Installation Guide](https://EUFLOW.github.io/WIFA_UQ/getting_started/installation/)
+- [Quickstart Tutorial](https://EUFLOW.github.io/WIFA_UQ/dependencies/quickstart/)
+- [Configuration Reference](https://EUFLOW.github.io/WIFA_UQ/user_guide/configuration/)
+- [API Concepts](https://EUFLOW.github.io/WIFA_UQ/concepts/overview/)
 
 
 
 ### Useful links
 
 * [WIFA public repository](https://github.com/EUFLOW/WIFA)
-* [WIFA's online documentation](https://eu-flow.pages.windenergy.dtu.dk/wp4/FLOW_API/)
+* [WIFA's online documentation](https://EUFLOW.github.io/WIFA_UQ/)
 * [WindIO repository](https://github.com/EUFLOW/windIO)
 
 
