@@ -45,10 +45,12 @@ def tiny_bias_db():
     k_b = np.linspace(0.01, 0.07, n_samples)
     ss_alpha = np.linspace(0.75, 1.0, n_samples)
 
-    # Physical features per flow_case
-    ABL_height = np.linspace(200.0, 800.0, n_cases)
-    wind_veer = np.linspace(0.0, 0.01, n_cases)
-    lapse_rate = np.linspace(-0.005, 0.005, n_cases)
+    # Physical features per flow_case - ADD SMALL NOISE to break perfect linearity
+    ABL_height = np.linspace(200.0, 800.0, n_cases) + np.random.normal(0, 10, n_cases)
+    wind_veer = np.linspace(0.0, 0.01, n_cases) + np.random.normal(0, 0.001, n_cases)
+    lapse_rate = np.linspace(-0.005, 0.005, n_cases) + np.random.normal(
+        0, 0.0005, n_cases
+    )
 
     # Synthetic bias: driven by ABL_height plus param effects
     # shape (sample, flow_case)
