@@ -9,6 +9,9 @@ import pytest
 import numpy as np
 import xarray as xr
 import yaml
+import matplotlib
+
+matplotlib.use("Agg")
 
 
 @pytest.fixture
