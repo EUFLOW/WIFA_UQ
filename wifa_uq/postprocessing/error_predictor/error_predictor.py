@@ -19,16 +19,7 @@ from wifa_uq.postprocessing.calibration import (
     #  DefaultParams,
     # LocalParameterPredictor,
 )
-
-
-try:
-    from sliced import SlicedInverseRegression
-except ImportError as e:
-    print(
-        "Error: 'sliced' package not found. SIRPolynomialRegressor will not be available."
-    )
-    raise e
-
+from sliced import SlicedInverseRegression
 
 """
 This script contains:
@@ -163,10 +154,6 @@ class SIRPolynomialRegressor(BaseEstimator, RegressorMixin):
     """
 
     def __init__(self, n_directions=1, degree=2):
-        if SlicedInverseRegression is None:
-            raise ImportError(
-                "The 'sliced' package is required to use SIRPolynomialRegressor."
-            )
         self.n_directions = n_directions
         self.degree = degree
 

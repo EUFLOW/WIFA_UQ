@@ -603,7 +603,7 @@ def run_pce_sensitivity(database, feature_names, pce_config: dict, output_dir: P
 
     plot_training_quality(
         database=database,
-        varnames=varnames,
+        varnames=feature_names,
         value_of_interest=array_of_interest,
         kk_values=kk_values,
         input_variable_array_physical=input_array[:n_samples, :n_feature],
